@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prima di entrare</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#EDEFF1;--paper-raised:#F6F7F8;--ink:#16202B;--ink-soft:#5A6873;
+  --rule:#C3CBD1;--rule-strong:#9AA6AF;--unknown:#8A6F2E;--cost:#A33A2B;
+  --gain:#2C6B50;--focus:#2F5D8A;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --cond:"IBM Plex Sans Condensed",system-ui,sans-serif;
+  --prose:"Newsreader",Georgia,serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--mono);
+  font-size:15px;line-height:1.55;padding:0 20px 80px}
+.sheet{max-width:920px;margin:0 auto}
+
+.masthead{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end;
+  justify-content:space-between;padding:38px 0 14px;border-bottom:2px solid var(--ink)}
+.masthead h1{font-family:var(--cond);font-weight:600;font-size:clamp(22px,4.5vw,30px);
+  letter-spacing:.10em;text-transform:uppercase;margin:0}
+.tagline{font-size:12px;letter-spacing:.06em;color:var(--ink-soft);margin-top:4px}
+nav{display:flex;gap:0;border:1px solid var(--rule-strong)}
+nav a{font-size:12px;padding:7px 14px;text-decoration:none;color:var(--ink-soft);
+  border-right:1px solid var(--rule-strong)}
+nav a:last-child{border-right:0}
+nav a:hover{background:var(--paper-raised);color:var(--ink)}
+nav a[aria-current]{background:var(--ink);color:var(--paper)}
+nav a:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+
+section{padding:32px 0;border-bottom:1px solid var(--rule)}
+section:last-of-type{border-bottom:0}
+.eyebrow{font-family:var(--cond);font-weight:600;font-size:11px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ink-soft);margin:0 0 18px}
+
+/* ---------- modulo ---------- */
+.fields{display:grid;gap:18px 22px;grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+.field label{display:block;font-size:11px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-soft);margin-bottom:6px}
+.field input,.field select{
+  width:100%;font-family:var(--mono);font-size:19px;padding:9px 11px;
+  background:var(--paper-raised);color:var(--ink);
+  border:1px solid var(--rule-strong);border-radius:0;
+  font-variant-numeric:tabular-nums;
+}
+.field input:focus,.field select:focus{outline:2px solid var(--focus);outline-offset:-1px}
+.hint{font-size:11px;color:var(--ink-soft);margin-top:5px;line-height:1.4}
+.side{display:flex;gap:0;border:1px solid var(--rule-strong)}
+.side button{flex:1;font-family:var(--mono);font-size:14px;padding:10px 0;
+  background:var(--paper-raised);color:var(--ink-soft);border:0;
+  border-right:1px solid var(--rule-strong);cursor:pointer}
+.side button:last-child{border-right:0}
+.side button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.side button:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+
+/* ---------- asse dei prezzi (elemento firma) ---------- */
+.axis-wrap{margin:6px 0 0}
+.axis{position:relative;height:96px;border-bottom:1px solid var(--ink);margin-top:34px}
+.zone{position:absolute;bottom:0;top:0}
+.zone.loss{background:repeating-linear-gradient(45deg,rgba(163,58,43,.16) 0 3px,transparent 3px 8px)}
+.zone.fees{background:repeating-linear-gradient(45deg,rgba(138,111,46,.30) 0 2px,transparent 2px 6px)}
+.zone.gain{background:rgba(44,107,80,.13)}
+.mark{position:absolute;top:-30px;bottom:0;width:1px;background:var(--ink)}
+.mark.dashed{background:none;border-left:1px dashed var(--unknown)}
+.mark b{position:absolute;top:-2px;left:6px;font-family:var(--cond);font-size:10px;
+  font-weight:600;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
+.mark i{position:absolute;top:12px;left:6px;font-style:normal;font-size:12px;
+  color:var(--ink-soft);white-space:nowrap;font-variant-numeric:tabular-nums}
+.mark.right b,.mark.right i{left:auto;right:6px}
+.axis-key{display:flex;flex-wrap:wrap;gap:8px 24px;margin-top:14px;font-size:12px;color:var(--ink-soft)}
+.axis-key span{display:flex;align-items:center;gap:8px}
+.sw{width:13px;height:13px;border:1px solid var(--rule-strong);flex:none}
+.sw.loss{background:repeating-linear-gradient(45deg,rgba(163,58,43,.5) 0 3px,transparent 3px 8px)}
+.sw.fees{background:repeating-linear-gradient(45deg,rgba(138,111,46,.6) 0 2px,transparent 2px 6px)}
+.sw.gain{background:rgba(44,107,80,.3)}
+
+/* ---------- risultati ---------- */
+.figures{display:grid;gap:1px;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));
+  background:var(--rule);border:1px solid var(--rule)}
+.fig{background:var(--paper-raised);padding:15px 16px 16px}
+.fig dt{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-soft);margin:0 0 7px}
+.fig dd{margin:0;font-size:25px;font-weight:500;font-variant-numeric:tabular-nums}
+.fig .sub{display:block;font-size:12px;font-weight:400;color:var(--ink-soft);margin-top:5px}
+.fig dd.cost{color:var(--cost)}
+.fig dd.gain{color:var(--gain)}
+
+.verdict{font-family:var(--prose);font-size:19px;line-height:1.5;max-width:60ch;margin:0 0 22px}
+.flag{border-left:3px solid var(--cost);padding:10px 0 10px 17px;margin:0 0 14px;
+  font-family:var(--prose);font-size:17px;line-height:1.5;max-width:62ch}
+.flag.warn{border-left-color:var(--unknown)}
+.flag.ok{border-left-color:var(--gain)}
+.flag b{font-family:var(--mono);font-size:14px;font-weight:600;
+  display:block;margin-bottom:3px;letter-spacing:.02em}
+
+table{border-collapse:collapse;width:100%;font-size:13px;margin-top:4px}
+th,td{padding:9px 11px;text-align:right;border-bottom:1px solid var(--rule);
+  font-variant-numeric:tabular-nums}
+th{font-family:var(--cond);font-weight:600;font-size:11px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--ink-soft);border-bottom:1px solid var(--ink)}
+th:first-child,td:first-child{text-align:left}
+
+footer{padding:26px 0;font-size:12px;color:var(--ink-soft);
+  border-top:2px solid var(--ink);max-width:72ch;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <header class="masthead">
+    <div>
+      <h1>Prima di entrare</h1>
+      <div class="tagline">Quanto comprare, quanto rischi, quanto deve muoversi</div>
+    </div>
+    <nav>
+      <a href="/">Registro</a>
+      <a href="/calcolatore.html" aria-current="page">Calcolatore</a>
+    </nav>
+  </header>
+
+  <section>
+    <p class="eyebrow">L'operazione che stai valutando</p>
+    <div class="fields">
+      <div class="field">
+        <label for="capitale">Capitale totale</label>
+        <input id="capitale" type="number" value="160" min="0" step="1" inputmode="decimal">
+      </div>
+      <div class="field">
+        <label for="rischio">Rischio per operazione</label>
+        <input id="rischio" type="number" value="1" min="0.1" max="100" step="0.1" inputmode="decimal">
+        <p class="hint">In percentuale del capitale. Sotto il 2% è la pratica comune.</p>
+      </div>
+      <div class="field">
+        <label for="direzione">Direzione</label>
+        <div class="side" id="direzione" role="group" aria-label="Direzione">
+          <button type="button" data-dir="long" aria-pressed="true">Compro</button>
+          <button type="button" data-dir="short">Vendo allo scoperto</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="entrata">Prezzo di entrata</label>
+        <input id="entrata" type="number" value="100" min="0" step="any" inputmode="decimal">
+      </div>
+      <div class="field">
+        <label for="stop">Prezzo di stop</label>
+        <input id="stop" type="number" value="95" min="0" step="any" inputmode="decimal">
+        <p class="hint">Il prezzo a cui ammetti di aver sbagliato ed esci.</p>
+      </div>
+      <div class="field">
+        <label for="target">Obiettivo <span style="text-transform:none">(facoltativo)</span></label>
+        <input id="target" type="number" value="" min="0" step="any" inputmode="decimal" placeholder="—">
+      </div>
+      <div class="field">
+        <label for="feeIn">Commissione in entrata</label>
+        <select id="feeIn">
+          <option value="0.40">0,40% — ordine limite</option>
+          <option value="0.80" selected>0,80% — ordine a mercato</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="feeOut">Commissione in uscita</label>
+        <select id="feeOut">
+          <option value="0.40">0,40% — ordine limite</option>
+          <option value="0.80" selected>0,80% — ordine a mercato</option>
+        </select>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Il risultato</p>
+    <div id="verdict"></div>
+    <dl class="figures" id="figures"></dl>
+    <div class="axis-wrap">
+      <div class="axis" id="axis"></div>
+      <div class="axis-key">
+        <span><i class="sw loss"></i> perdi</span>
+        <span><i class="sw fees"></i> paghi solo commissioni</span>
+        <span><i class="sw gain"></i> guadagni davvero</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Come si scompone</p>
+    <table id="breakdown"></table>
+  </section>
+
+  <footer>
+    Aritmetica, non previsione. Questa pagina non sa dove andrà il prezzo e non
+    esprime alcun giudizio sull'operazione: calcola solo cosa comporta, ai costi
+    che le indichi. Le aliquote 0,40% e 0,80% sono quelle del tuo livello Kraken
+    e cambiano al variare del volume mensile: verificale nella pagina commissioni.
+    Non è consulenza finanziaria.
+  </footer>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const ids = ['capitale','rischio','entrata','stop','target','feeIn','feeOut'];
+let direzione = 'long';
+
+const fmt  = (v,d=2) => Number(v).toLocaleString('it-IT',{minimumFractionDigits:d,maximumFractionDigits:d});
+const pct  = v => fmt(v,2) + '%';
+/** Prezzi molto piccoli non vanno arrotondati a due decimali. */
+const prz  = v => Math.abs(v) >= 1 ? fmt(v,2) : Number(v).toLocaleString('it-IT',{maximumSignificantDigits:5});
+
+function calcola(){
+  const capitale = +$('capitale').value || 0;
+  const rischioPct = +$('rischio').value || 0;
+  const entrata = +$('entrata').value || 0;
+  const stop = +$('stop').value || 0;
+  const target = +$('target').value || 0;
+  const fIn = (+$('feeIn').value || 0) / 100;
+  const fOut = (+$('feeOut').value || 0) / 100;
+  const long = direzione === 'long';
+
+  const verdict = $('verdict'), figures = $('figures'), breakdown = $('breakdown'), axis = $('axis');
+
+  const stopValido = long ? (stop > 0 && stop < entrata) : (stop > entrata);
+  if (!(entrata > 0) || !stopValido) {
+    verdict.innerHTML = `<p class="flag warn"><b>Manca lo stop</b>
+      ${long ? 'Comprando, lo stop va sotto il prezzo di entrata.'
+             : 'Vendendo allo scoperto, lo stop va sopra il prezzo di entrata.'}
+      Senza un prezzo a cui uscire non esiste una dimensione corretta della posizione:
+      il rischio sarebbe illimitato.</p>`;
+    figures.innerHTML = ''; breakdown.innerHTML = ''; axis.innerHTML = '';
+    return;
+  }
+
+  const rischio = capitale * rischioPct / 100;
+  const distanza = Math.abs(entrata - stop);
+  const distanzaPct = distanza / entrata * 100;
+
+  // Perdita per unità allo stop, commissioni comprese su entrambi i lati.
+  const perditaPerUnita = distanza + entrata * fIn + stop * fOut;
+  const qty = perditaPerUnita > 0 ? rischio / perditaPerUnita : 0;
+  const controvalore = qty * entrata;
+
+  const feeEntrata = controvalore * fIn;
+  const feeUscitaStop = qty * stop * fOut;
+  const commissioniTotali = feeEntrata + feeUscitaStop;
+
+  // Pareggio: prezzo di uscita che annulla il costo delle due commissioni.
+  //   long:  P(1-fOut) = entrata(1+fIn)
+  //   short: P(1+fOut) = entrata(1-fIn)
+  const pareggio = long
+    ? entrata * (1 + fIn) / (1 - fOut)
+    : entrata * (1 - fIn) / (1 + fOut);
+  const pareggioPct = Math.abs(pareggio - entrata) / entrata * 100;
+
+  const capitaleSuperato = controvalore > capitale;
+  const costiOltreStop = pareggioPct >= distanzaPct;
+
+  let netto = null, erre = null;
+  if (target > 0 && (long ? target > entrata : target < entrata)) {
+    netto = long
+      ? qty * (target - entrata) - controvalore * fIn - qty * target * fOut
+      : qty * (entrata - target) - controvalore * fIn - qty * target * fOut;
+    erre = rischio > 0 ? netto / rischio : null;
+  }
+
+  // --- verdetto ---
+  const flags = [];
+  if (costiOltreStop) flags.push(`<p class="flag"><b>Le commissioni superano lo stop</b>
+    Per andare in pari il prezzo deve muoversi del ${pct(pareggioPct)}, ma il tuo stop
+    scatta a ${pct(distanzaPct)} di distanza. L'operazione perde in entrambi i casi:
+    o tocchi lo stop, o esci pagando più di quanto hai guadagnato. Allarga lo stop,
+    usa ordini limite, o lascia perdere questo setup.</p>`);
+  if (capitaleSuperato) flags.push(`<p class="flag"><b>Non hai abbastanza capitale</b>
+    La posizione corretta varrebbe ${fmt(controvalore)}, ma il tuo capitale è ${fmt(capitale)}.
+    Con questo stop non puoi rischiare solo il ${pct(rischioPct)} senza leva. Uno stop più
+    largo riduce la dimensione richiesta.</p>`);
+  if (!costiOltreStop && commissioniTotali > rischio * 0.25) flags.push(`<p class="flag warn">
+    <b>Le commissioni pesano molto sul rischio</b>
+    Paghi ${fmt(commissioniTotali,3)} di commissioni a fronte di ${fmt(rischio,2)} di rischio:
+    ${pct(commissioniTotali / rischio * 100)} del capitale che hai messo in gioco se ne va in costi.
+    Operazioni piccole subiscono i costi fissi in modo sproporzionato.</p>`);
+  if (erre !== null && erre < 1) flags.push(`<p class="flag"><b>Rischi più di quanto punti a guadagnare</b>
+    All'obiettivo porti a casa ${fmt(netto,2)}, allo stop ne perdi ${fmt(rischio,2)}.
+    Con un rapporto di ${fmt(erre,2)} a 1 devi indovinare più di ${pct(100/(1+erre))}
+    delle volte solo per non perdere.</p>`);
+  else if (erre !== null && erre < 1.5) flags.push(`<p class="flag warn"><b>Il rapporto è troppo stretto</b>
+    ${fmt(erre,2)} a 1 significa dover indovinare ${pct(100/(1+erre))} delle volte solo per
+    pareggiare. Nessuno mantiene stabilmente quella percentuale. Sotto 1,5 a 1 il margine
+    di errore è troppo sottile: serve un obiettivo più ambizioso o uno stop più vicino,
+    ammesso che il grafico li giustifichi entrambi.</p>`);
+  if (erre === null && target <= 0) flags.push(`<p class="flag warn"><b>Manca l'obiettivo</b>
+    Senza un prezzo di uscita non sai se il trade vale il rischio. Un buon rapporto
+    non si vede dallo stop: si vede da quanto punti a guadagnare rispetto a quanto rischi.</p>`);
+  if (!flags.length) flags.push(`<p class="flag ok"><b>Numeri coerenti</b>
+    Lo stop supera i costi, la posizione sta nel capitale e il rapporto rischio/rendimento
+    ${erre !== null ? `è ${fmt(erre,2)} a 1` : 'non è valutabile senza obiettivo'}.
+    Questo non dice nulla su dove andrà il prezzo: dice solo che l'aritmetica regge.</p>`);
+  verdict.innerHTML = flags.join('');
+
+  // --- cifre ---
+  figures.innerHTML = `
+    <div class="fig"><dt>Quantità da ${long ? 'comprare' : 'vendere'}</dt>
+      <dd>${qty >= 1 ? fmt(qty,4) : Number(qty).toLocaleString('it-IT',{maximumSignificantDigits:6})}
+      <span class="sub">controvalore ${fmt(controvalore)}</span></dd></div>
+    <div class="fig"><dt>Perdi allo stop</dt>
+      <dd class="cost">${fmt(rischio,2)}<span class="sub">${pct(rischioPct)} del capitale</span></dd></div>
+    <div class="fig"><dt>Commissioni</dt>
+      <dd class="cost">${fmt(commissioniTotali,3)}<span class="sub">${pct(commissioniTotali/controvalore*100)} del controvalore</span></dd></div>
+    <div class="fig"><dt>Pareggi a</dt>
+      <dd>${prz(pareggio)}<span class="sub">${long ? '+' : '−'}${pct(pareggioPct)} dall'entrata</span></dd></div>
+    ${netto !== null ? `
+    <div class="fig"><dt>Guadagni all'obiettivo</dt>
+      <dd class="gain">${fmt(netto,2)}<span class="sub">al netto delle commissioni</span></dd></div>
+    <div class="fig"><dt>Rapporto rischio/rendimento</dt>
+      <dd>${fmt(erre,2)} : 1<span class="sub">serve indovinare ${pct(100/(1+erre))} delle volte per pareggiare</span></dd></div>` : ''}`;
+
+  // --- asse dei prezzi ---
+  const punti = [stop, entrata, pareggio].concat(target > 0 ? [target] : []);
+  let lo = Math.min(...punti), hi = Math.max(...punti);
+  const pad = (hi - lo) * 0.14 || entrata * 0.02;
+  lo -= pad; hi += pad;
+  const x = p => ((p - lo) / (hi - lo)) * 100;
+
+  const zone = long
+    ? [{c:'loss', a:lo, b:entrata},{c:'fees', a:entrata, b:pareggio},{c:'gain', a:pareggio, b:hi}]
+    : [{c:'gain', a:lo, b:pareggio},{c:'fees', a:pareggio, b:entrata},{c:'loss', a:entrata, b:hi}];
+
+  const marks = [
+    {p:stop,     t:'Stop',    v:prz(stop)},
+    {p:entrata,  t:'Entrata', v:prz(entrata)},
+    {p:pareggio, t:'Pareggio',v:prz(pareggio), dashed:true}
+  ].concat(target > 0 ? [{p:target, t:'Obiettivo', v:prz(target)}] : []);
+
+  axis.innerHTML =
+    zone.map(z => `<div class="zone ${z.c}" style="left:${x(z.a)}%;width:${Math.max(0,x(z.b)-x(z.a))}%"></div>`).join('') +
+    marks.map(m => `<div class="mark${m.dashed ? ' dashed' : ''}${x(m.p) > 70 ? ' right' : ''}"
+        style="left:${x(m.p)}%"><b>${m.t}</b><i>${m.v}</i></div>`).join('');
+
+  // --- scomposizione ---
+  breakdown.innerHTML = `
+    <thead><tr><th>Voce</th><th>Calcolo</th><th>Valore</th></tr></thead>
+    <tbody>
+      <tr><td>Rischio ammesso</td><td>${fmt(capitale)} × ${pct(rischioPct)}</td><td>${fmt(rischio,2)}</td></tr>
+      <tr><td>Distanza dello stop</td><td>|${prz(entrata)} − ${prz(stop)}|</td><td>${prz(distanza)} (${pct(distanzaPct)})</td></tr>
+      <tr><td>Perdita per unità</td><td>distanza + commissioni sui due lati</td><td>${prz(perditaPerUnita)}</td></tr>
+      <tr><td>Quantità</td><td>${fmt(rischio,2)} ÷ ${prz(perditaPerUnita)}</td><td>${qty >= 1 ? fmt(qty,4) : Number(qty).toLocaleString('it-IT',{maximumSignificantDigits:6})}</td></tr>
+      <tr><td>Commissione in entrata</td><td>${fmt(controvalore)} × ${pct(fIn*100)}</td><td>${fmt(feeEntrata,3)}</td></tr>
+      <tr><td>Commissione in uscita allo stop</td><td>${fmt(qty*stop)} × ${pct(fOut*100)}</td><td>${fmt(feeUscitaStop,3)}</td></tr>
+      <tr><td>Prezzo di pareggio</td><td>${long
+          ? `${prz(entrata)} × (1 + ${pct(fIn*100)}) ÷ (1 − ${pct(fOut*100)})`
+          : `${prz(entrata)} × (1 − ${pct(fIn*100)}) ÷ (1 + ${pct(fOut*100)})`}</td><td>${prz(pareggio)}</td></tr>
+    </tbody>`;
+}
+
+ids.forEach(id => $(id).addEventListener('input', calcola));
+$('direzione').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  direzione = b.dataset.dir;
+  document.querySelectorAll('#direzione button').forEach(x => x.removeAttribute('aria-pressed'));
+  b.setAttribute('aria-pressed','true');
+  calcola();
+});
+calcola();
+</script>
+</body>
+</html>

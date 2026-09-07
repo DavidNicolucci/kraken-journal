@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Registro operazioni</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#EDEFF1;
+  --paper-raised:#F6F7F8;
+  --ink:#16202B;
+  --ink-soft:#5A6873;
+  --rule:#C3CBD1;
+  --rule-strong:#9AA6AF;
+  --unknown:#8A6F2E;
+  --cost:#A33A2B;
+  --gain:#2C6B50;
+  --focus:#2F5D8A;
+
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --cond:"IBM Plex Sans Condensed",system-ui,sans-serif;
+  --prose:"Newsreader",Georgia,serif;
+}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--mono);
+  font-size:15px;
+  line-height:1.55;
+  padding:0 20px 80px;
+}
+
+.sheet{max-width:920px;margin:0 auto}
+
+/* ---------- intestazione ---------- */
+
+.masthead{
+  display:flex;flex-wrap:wrap;gap:20px;
+  align-items:flex-end;justify-content:space-between;
+  padding:38px 0 14px;
+  border-bottom:2px solid var(--ink);
+}
+.masthead h1{
+  font-family:var(--cond);
+  font-weight:600;
+  font-size:clamp(22px,4.5vw,30px);
+  letter-spacing:.10em;
+  text-transform:uppercase;
+  margin:0;
+}
+.period{
+  font-size:12px;letter-spacing:.06em;
+  color:var(--ink-soft);margin-top:4px;
+}
+
+.pages{display:flex;gap:0;border:1px solid var(--rule-strong)}
+.pages a{font-size:12px;padding:7px 14px;text-decoration:none;color:var(--ink-soft);
+  border-right:1px solid var(--rule-strong)}
+.pages a:last-child{border-right:0}
+.pages a:hover{background:var(--paper-raised);color:var(--ink)}
+.pages a[aria-current]{background:var(--ink);color:var(--paper)}
+.pages a:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+
+.range{display:flex;gap:0;border:1px solid var(--rule-strong)}
+.range button{
+  font-family:var(--mono);font-size:12px;
+  padding:7px 14px;
+  background:transparent;color:var(--ink-soft);
+  border:0;border-right:1px solid var(--rule-strong);
+  cursor:pointer;
+}
+.range button:last-child{border-right:0}
+.range button:hover{background:var(--paper-raised);color:var(--ink)}
+.range button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.range button:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+
+/* ---------- blocchi ---------- */
+
+section{padding:34px 0;border-bottom:1px solid var(--rule)}
+section:last-of-type{border-bottom:0}
+
+.eyebrow{
+  font-family:var(--cond);font-weight:600;
+  font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--ink-soft);
+  margin:0 0 18px;
+}
+
+/* ---------- tesi ---------- */
+
+.thesis{
+  display:flex;flex-wrap:wrap;align-items:baseline;
+  gap:0 14px;margin:0 0 6px;
+}
+.thesis .n{
+  font-family:var(--cond);font-weight:600;
+  font-size:clamp(46px,11vw,74px);
+  line-height:.92;letter-spacing:-.02em;
+}
+.thesis .what{
+  font-family:var(--cond);font-weight:500;
+  font-size:clamp(15px,2.6vw,19px);
+  letter-spacing:.05em;text-transform:uppercase;
+}
+.thesis-note{
+  font-family:var(--prose);font-size:17px;
+  color:var(--ink-soft);max-width:56ch;margin:10px 0 0;
+}
+
+/* elemento firma: copertura dei dati */
+
+.coverage{margin-top:30px}
+.cov-bar{
+  display:flex;height:30px;width:100%;
+  border:1px solid var(--ink);
+  background:var(--paper-raised);
+}
+.cov-known{background:var(--ink)}
+.cov-unknown{
+  background-image:repeating-linear-gradient(
+    45deg,var(--unknown) 0 2px,transparent 2px 7px);
+  border-left:1px solid var(--ink);
+}
+.cov-bar > div:first-child{border-left:0}
+.cov-legend{
+  display:flex;flex-wrap:wrap;gap:8px 26px;
+  margin-top:10px;font-size:12px;color:var(--ink-soft);
+}
+.cov-legend span{display:flex;align-items:center;gap:8px}
+.swatch{width:13px;height:13px;border:1px solid var(--ink);flex:none}
+.swatch.unknown{
+  background-image:repeating-linear-gradient(
+    45deg,var(--unknown) 0 2px,transparent 2px 7px);
+}
+.swatch.known{background:var(--ink)}
+
+/* ---------- cifre ---------- */
+
+.figures{
+  display:grid;gap:1px;
+  grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
+  background:var(--rule);border:1px solid var(--rule);
+}
+.fig{background:var(--paper-raised);padding:15px 16px 16px}
+.fig dt{
+  font-size:11px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-soft);margin:0 0 7px;
+}
+.fig dd{
+  margin:0;font-size:26px;font-weight:500;
+  font-variant-numeric:tabular-nums;letter-spacing:-.01em;
+}
+.fig .sub{
+  display:block;font-size:12px;font-weight:400;
+  color:var(--ink-soft);margin-top:5px;letter-spacing:0;
+}
+.fig dd.muted{color:var(--unknown)}
+
+/* ---------- costi ---------- */
+
+.cost-row{
+  display:grid;
+  grid-template-columns:minmax(96px,1.1fr) 3fr minmax(74px,auto);
+  gap:14px;align-items:center;
+  padding:11px 0;border-top:1px solid var(--rule);
+}
+.cost-row:last-child{border-bottom:1px solid var(--rule)}
+.cost-name{font-size:13px;overflow:hidden;text-overflow:ellipsis}
+.cost-track{position:relative;height:15px;background:var(--paper-raised);border:1px solid var(--rule)}
+.cost-fill{position:absolute;inset:0 auto 0 0;background:var(--cost)}
+.cost-fill.fx{
+  background-image:repeating-linear-gradient(
+    45deg,var(--cost) 0 3px,transparent 3px 6px);
+  background-color:transparent;
+}
+.tick{position:absolute;top:-4px;bottom:-4px;width:1px;background:var(--ink);opacity:.45;z-index:2}
+.cost-fill{z-index:1}
+.cost-pct{
+  text-align:right;font-size:13px;font-weight:500;
+  font-variant-numeric:tabular-nums;
+}
+.tier-key{margin:14px 0 0;font-size:12px;color:var(--ink-soft)}
+
+/* ---------- tabella ---------- */
+
+.scroller{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:620px;font-size:13px}
+th,td{
+  padding:10px 11px;text-align:right;
+  border-bottom:1px solid var(--rule);
+  font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+th{
+  font-family:var(--cond);font-weight:600;
+  font-size:11px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-soft);
+  border-bottom:1px solid var(--ink);
+}
+th:first-child,td:first-child{text-align:left}
+tbody tr:hover td{background:var(--paper-raised)}
+.tag{
+  font-family:var(--cond);font-size:10px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-soft);
+  border:1px solid var(--rule-strong);padding:1px 5px;margin-left:7px;
+}
+.na{
+  display:inline-block;color:var(--unknown);
+  padding:2px 8px;
+  background-image:repeating-linear-gradient(
+    45deg,rgba(138,111,46,.28) 0 2px,transparent 2px 7px);
+  border:1px solid var(--unknown);
+}
+.pos{color:var(--gain)}
+.neg{color:var(--cost)}
+
+/* ---------- lettura ---------- */
+
+.prose{font-family:var(--prose);font-size:18px;line-height:1.62;max-width:64ch}
+.prose p{margin:0 0 18px}
+.findings{list-style:none;padding:0;margin:0;max-width:66ch}
+.findings li{
+  font-family:var(--prose);font-size:17px;line-height:1.55;
+  padding:12px 0 12px 30px;border-top:1px solid var(--rule);position:relative;
+}
+.findings li::before{
+  content:"";position:absolute;left:2px;top:21px;
+  width:13px;height:1px;background:var(--rule-strong);
+}
+.findings li:last-child{border-bottom:1px solid var(--rule)}
+
+.caveat{
+  border-left:3px solid var(--unknown);
+  padding:2px 0 2px 18px;margin-top:8px;
+  font-family:var(--prose);font-size:16px;line-height:1.55;
+  color:var(--ink-soft);max-width:64ch;
+}
+
+.notice{
+  border:1px solid var(--unknown);
+  padding:13px 15px;margin:0 0 26px;
+  font-size:13px;line-height:1.5;
+  background:var(--paper-raised);
+}
+.notice b{font-weight:600}
+
+.state{padding:60px 0;font-size:14px;color:var(--ink-soft)}
+.state.error{color:var(--cost)}
+
+footer{
+  padding:26px 0;font-size:12px;color:var(--ink-soft);
+  border-top:2px solid var(--ink);max-width:70ch;
+}
+
+@media (max-width:620px){
+  .cost-row{grid-template-columns:1fr auto;row-gap:7px}
+  .cost-track{grid-column:1/-1;order:3}
+}
+@media (prefers-reduced-motion:no-preference){
+  .fade{animation:fade .35s ease both}
+  @keyframes fade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+}
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <header class="masthead">
+    <div>
+      <h1>Registro operazioni</h1>
+      <div class="period" id="period">—</div>
+    </div>
+    <nav class="pages">
+      <a href="/" aria-current="page">Registro</a>
+      <a href="/calcolatore.html">Calcolatore</a>
+    </nav>
+    <div class="range" id="range" role="group" aria-label="Periodo">
+      <button type="button" data-days="30">30 g</button>
+      <button type="button" data-days="90" aria-pressed="true">90 g</button>
+      <button type="button" data-days="365">1 anno</button>
+    </div>
+  </header>
+
+  <div id="out"><div class="state" id="state">Carico il registro…</div></div>
+
+</div>
+
+<script>
+const out = document.getElementById('out');
+const periodEl = document.getElementById('period');
+
+const MESI = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
+const data = iso => { const d = new Date(iso); return `${d.getDate()} ${MESI[d.getMonth()]} ${d.getFullYear()}`; };
+const esc  = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const num  = (v, d = 2) => v === null || v === undefined
+  ? null : Number(v).toLocaleString('it-IT', {minimumFractionDigits: d, maximumFractionDigits: d});
+
+/** Percentuale di commissione effettivamente pagata su una coppia. */
+const feePct = p => p.feesToVolumePercent ?? (p.volumeQuote > 0 ? (p.feesPaid / p.volumeQuote) * 100 : 0);
+
+function render(j) {
+  const s = j.stats, r = j.report;
+  const pairs   = s.byPair || [];
+  const trading = pairs.filter(p => !p.fxConversion);
+  const fx      = pairs.filter(p => p.fxConversion);
+
+  periodEl.textContent = `${data(s.periodStart)} — ${data(s.periodEnd)}`;
+
+  // Copertura: quota di volume con costo di carico ricostruibile.
+  const volTot   = trading.reduce((a, p) => a + p.volumeQuote, 0);
+  const volNoto  = trading.filter(p => p.pnlComplete).reduce((a, p) => a + p.volumeQuote, 0);
+  const pctNoto  = volTot > 0 ? (volNoto / volTot) * 100 : 0;
+
+  // La scala arriva sempre almeno allo 0,80%: sotto quella soglia le barre
+  // sarebbero enormi e il confronto con le aliquote perderebbe senso.
+  const maxPct = Math.max(0.9, ...pairs.map(feePct)) * 1.08;
+
+  out.innerHTML = `
+  <section class="fade">
+    ${s.mixedQuoteCurrencies ? `<p class="notice">
+      <b>Valute miste (${s.quoteCurrencies.join(', ')}).</b>
+      I totali qui sotto sommano importi in valute diverse. Leggili come ordine
+      di grandezza. I valori per coppia sono nella loro valuta e sono esatti.
+    </p>` : ''}
+
+    <p class="eyebrow">Attività del periodo</p>
+    <div class="thesis">
+      <span class="n">${s.tradingTrades}</span>
+      <span class="what">operazioni di trading</span>
+    </div>
+    <p class="thesis-note">
+      Kraken ne ha registrate ${s.totalOperations}${s.fxConversions > 0
+        ? `, ma ${s.fxConversions} erano cambi valuta: spostare denaro, non prendere posizione`
+        : ''}.
+      ${s.tradingDays > 0
+        ? `Concentrate in ${s.tradingDays} giorn${s.tradingDays === 1 ? 'o' : 'i'}.`
+        : ''}
+    </p>
+
+    <div class="coverage">
+      <p class="eyebrow" style="margin-bottom:10px">Quanto di questo periodo è misurabile</p>
+      <div class="cov-bar" role="img"
+           aria-label="${pctNoto.toFixed(0)}% del volume ha costo di carico noto">
+        ${pctNoto > 0 ? `<div class="cov-known" style="flex:${pctNoto}"></div>` : ''}
+        ${pctNoto < 100 ? `<div class="cov-unknown" style="flex:${100 - pctNoto}"></div>` : ''}
+      </div>
+      <div class="cov-legend">
+        <span><i class="swatch known"></i> ${pctNoto.toFixed(0)}% costo di carico noto</span>
+        <span><i class="swatch unknown"></i> ${(100 - pctNoto).toFixed(0)}% acquistato prima del periodo</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="fade">
+    <p class="eyebrow">Cifre</p>
+    <dl class="figures">
+      <div class="fig">
+        <dt>Volume di trading</dt>
+        <dd>${num(s.tradingVolumeQuote)}</dd>
+      </div>
+      <div class="fig">
+        <dt>Commissioni di trading</dt>
+        <dd>${num(s.tradingFees, 3)}<span class="sub">${num(s.feesToVolumePercent)}% del volume</span></dd>
+      </div>
+      <div class="fig">
+        <dt>Commissioni di cambio</dt>
+        <dd>${num(s.fxFees, 3)}<span class="sub">${s.fxConversions} conversion${s.fxConversions === 1 ? 'e' : 'i'}</span></dd>
+      </div>
+      <div class="fig">
+        <dt>Risultato realizzato</dt>
+        ${s.pairsWithIncompletePnl > 0 || s.realizedPnlComplete === null
+          ? `<dd class="muted">parziale<span class="sub">calcolabile su ${trading.length - s.pairsWithIncompletePnl} copp${trading.length - s.pairsWithIncompletePnl === 1 ? 'ia' : 'ie'} di ${trading.length}${s.realizedPnlComplete !== null ? `: ${num(s.realizedPnlComplete, 3)}` : ''}</span></dd>`
+          : `<dd class="${s.realizedPnlComplete >= 0 ? 'pos' : 'neg'}">${num(s.realizedPnlComplete, 3)}</dd>`}
+      </div>
+    </dl>
+  </section>
+
+  ${pairs.length ? `
+  <section class="fade">
+    <p class="eyebrow">Quanto ti è costato operare</p>
+    ${pairs.slice().sort((a, b) => feePct(b) - feePct(a)).map(p => {
+      const pct = feePct(p);
+      return `<div class="cost-row">
+        <div class="cost-name">${esc(p.displayName)}${p.fxConversion ? '<span class="tag">cambio</span>' : ''}</div>
+        <div class="cost-track">
+          <div class="cost-fill${p.fxConversion ? ' fx' : ''}" style="width:${(pct / maxPct) * 100}%"></div>
+          <div class="tick" style="left:${(0.40 / maxPct) * 100}%"></div>
+          <div class="tick" style="left:${(0.80 / maxPct) * 100}%"></div>
+        </div>
+        <div class="cost-pct">${pct.toFixed(2)}%</div>
+      </div>`;
+    }).join('')}
+    <p class="tier-key">
+      Le due tacche sono le tue aliquote Kraken: 0,40% con ordine limite,
+      0,80% a mercato. Una barra vicina alla tacca destra è un ordine che ha
+      pagato il doppio del necessario.
+    </p>
+  </section>` : ''}
+
+  ${trading.length ? `
+  <section class="fade">
+    <p class="eyebrow">Dettaglio per coppia</p>
+    <div class="scroller"><table>
+      <thead><tr>
+        <th>Coppia</th><th>Op.</th><th>Acq.</th><th>Vend.</th>
+        <th>Volume</th><th>Commissioni</th><th>Risultato</th><th>Posizione aperta</th>
+      </tr></thead>
+      <tbody>${trading.map(p => `<tr>
+        <td>${esc(p.displayName)}</td>
+        <td>${p.tradeCount}</td>
+        <td>${p.buyCount}</td>
+        <td>${p.sellCount}</td>
+        <td>${num(p.volumeQuote)} <span style="color:var(--ink-soft)">${esc(p.quoteCurrency)}</span></td>
+        <td>${num(p.feesPaid, 3)}</td>
+        <td>${!p.pnlComplete
+              ? `<span class="na" title="Venduto ${num(p.unmatchedSellVolume, 4)} senza acquisto corrispondente nel periodo">non calcolabile</span>`
+              : p.sellCount === 0
+                ? `<span style="color:var(--ink-soft)" title="Comprato e non ancora venduto: non c'è un risultato da realizzare">non realizzato</span>`
+                : `<span class="${p.realizedPnl >= 0 ? 'pos' : 'neg'}">${num(p.realizedPnl, 3)}</span>`}</td>
+        <td>${p.openPosition > 0 ? num(p.openPosition, 4) : '—'}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+    ${fx.length ? `<p class="tier-key">
+      ${fx.length === 1 ? 'Esclusa' : 'Escluse'} da questa tabella:
+      ${fx.map(p => esc(p.displayName)).join(', ')} — ${s.fxConversions} conversion${s.fxConversions === 1 ? 'e' : 'i'} valutari${s.fxConversions === 1 ? 'a' : 'e'}.
+    </p>` : ''}
+  </section>` : ''}
+
+  <section class="fade">
+    <p class="eyebrow">Lettura</p>
+    <div class="prose"><p>${esc(r.summary)}</p></div>
+
+    ${r.observedPatterns?.length ? `
+      <p class="eyebrow" style="margin-top:30px">Cosa dicono i dati</p>
+      <ul class="findings">${r.observedPatterns.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+
+    ${r.questionsToAskYourself?.length ? `
+      <p class="eyebrow" style="margin-top:30px">Domande da porti</p>
+      <ul class="findings">${r.questionsToAskYourself.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+
+    ${r.dataCaveat ? `
+      <p class="eyebrow" style="margin-top:30px">Limiti di questi dati</p>
+      <p class="caveat">${esc(r.dataCaveat)}</p>` : ''}
+  </section>
+
+  <footer>
+    Le cifre sono calcolate dal codice a partire dallo storico Kraken. La lettura
+    testuale è generata da un modello a partire da quelle cifre: interpreta, non
+    ricalcola. Il risultato usa il costo medio ponderato, non il LIFO fiscale.
+  </footer>`;
+}
+
+async function load(days) {
+  out.innerHTML = `<div class="state">Carico il registro…</div>`;
+  try {
+    const res = await fetch(`/api/journal?days=${days}`);
+    if (!res.ok) throw new Error(`Il server ha risposto ${res.status}. Controlla la console di IntelliJ.`);
+    render(await res.json());
+  } catch (e) {
+    out.innerHTML = `<div class="state error">${esc(e.message)}</div>`;
+  }
+}
+
+document.getElementById('range').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  document.querySelectorAll('#range button').forEach(x => x.removeAttribute('aria-pressed'));
+  b.setAttribute('aria-pressed', 'true');
+  load(b.dataset.days);
+});
+
+load(90);
+</script>
+</body>
+</html>

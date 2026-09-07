@@ -1,0 +1,26 @@
+target/
+build/
+*.class
+*.jar
+*.war
+
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+application-local.properties
+.env
+*.log
+
+.DS_Store
+
+# Claude Code
+.claude/
+.claude.json
+.claude.json.backup
+CLAUDE.md
+CLAUDE.local.md
+.mcp.json

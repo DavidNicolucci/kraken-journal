@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: kraken-trading-journal
+  jackson:
+    default-property-inclusion: non_null
+
+kraken:
+  base-url: https://api.kraken.com
+  # Chiave con SOLI permessi di query. Mai Trade, mai Withdraw.
+  api-key: ${KRAKEN_API_KEY}
+  api-secret: ${KRAKEN_API_SECRET}
+
+anthropic:
+  base-url: https://api.anthropic.com
+  api-key: ${ANTHROPIC_API_KEY}
+  model: claude-sonnet-5
+  max-tokens: 4096
+
+logging:
+  level:
+    dev.kraken.journal: INFO
