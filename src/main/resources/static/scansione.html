@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scansione</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/stile.css">
+<style>
+
+.sheet{max-width:1020px}
+
+.testa{display:flex;flex-wrap:wrap;gap:14px;align-items:baseline;justify-content:space-between}
+
+.flag{margin:18px 0 0}
+
+.azioni{display:flex;gap:0;border:1px solid var(--rule-strong)}
+.azioni button{font-family:var(--mono);font-size:13px;padding:9px 16px;
+  background:var(--paper-raised);color:var(--ink);border:0;
+  border-right:1px solid var(--rule-strong);cursor:pointer}
+.azioni button:last-child{border-right:0}
+.azioni button:hover:not(:disabled){background:var(--ink);color:var(--paper)}
+.azioni button:disabled{color:var(--rule-strong);cursor:progress}
+.azioni button:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+
+.scroller{overflow-x:auto;margin-top:4px}
+
+th,td{white-space:nowrap}
+
+tr.idonea td{background:rgba(44,107,80,.10)}
+td .sub{display:block;font-size:11px;color:var(--ink-soft);white-space:normal;
+  font-variant-numeric:normal;margin-top:3px}
+tr.motivi td{text-align:left;white-space:normal;font-size:12px;color:var(--ink-soft);
+  padding-top:0;padding-bottom:12px;border-bottom:1px solid var(--rule)}
+tr.conMotivi td{border-bottom:0;padding-bottom:4px}
+.coppia{font-weight:600}
+.conteggio{font-weight:600}
+.conteggio.pieno{color:var(--gain)}
+.stato{font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+.stato.perdita{color:var(--cost)}
+.stato.guadagno{color:var(--gain)}
+.stato.aperta{color:var(--unknown)}
+.carta{display:block;font-size:11px;color:var(--ink-soft);letter-spacing:.06em;
+  text-transform:uppercase;margin-top:3px}
+
+.state{font-family:var(--prose);font-size:17px;color:var(--ink-soft);padding:8px 0}
+.nota{font-family:var(--prose);font-size:17px;line-height:1.5;max-width:64ch;color:var(--ink-soft)}
+
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <header class="masthead">
+    <div>
+      <h1>Scansione</h1>
+      <div class="tagline" id="aggiornato">Cosa passa il filtro, e cosa sta misurando il registro</div>
+    </div>
+    <nav>
+      <a href="/">Registro</a>
+      <a href="/calcolatore.html">Calcolatore</a>
+      <a href="/scansione.html" aria-current="page">Scansione</a>
+    </nav>
+  </header>
+
+  <section>
+    <p class="eyebrow">Dove sta il metodo</p>
+    <div class="figures" id="statistiche"><div class="fig"><dt>&nbsp;</dt><dd>—</dd></div></div>
+    <div id="avvisoStatistiche"></div>
+  </section>
+
+  <section>
+    <div class="testa">
+      <p class="eyebrow" style="margin-bottom:0">Coppie esaminate oggi</p>
+      <div class="azioni">
+        <button type="button" id="bottoneScansione">Aggiorna scansione</button>
+        <button type="button" id="bottoneLavoro">Esegui il lavoro di oggi</button>
+      </div>
+    </div>
+    <div class="state" id="statoScansione">Carico la scansione…</div>
+    <div class="scroller"><table id="tabellaScansione" hidden>
+      <thead><tr>
+        <th>Coppia</th><th>Ultimo</th><th>Controvalore 24h</th><th>RSI 14</th>
+        <th>Dal MA20</th><th>Stop</th><th>Obiettivo</th><th>Controlli</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table></div>
+    <p class="nota" style="margin-top:18px">Nessuna riga di questa tabella dice di comprare.
+      Dice quali condizioni sono vere e quali no, con accanto il numero che lo ha deciso.
+      Una coppia con sei controlli su sei non è un segnale di acquisto: è un setup che
+      rispetta le regole scritte nella guida.</p>
+  </section>
+
+  <section>
+    <div class="testa">
+      <p class="eyebrow" style="margin-bottom:0">Registro delle analisi</p>
+      <div class="azioni">
+        <button type="button" id="bottoneRisoluzione">Chiudi le aperte</button>
+      </div>
+    </div>
+    <div class="state" id="statoRegistro">Carico il registro…</div>
+    <div class="scroller"><table id="tabellaRegistro" hidden>
+      <thead><tr>
+        <th>Data</th><th>Coppia</th><th>Trigger</th><th>Entrata</th><th>Stop</th>
+        <th>Obiettivo</th><th>Stato</th><th>Uscita</th><th>Risultato</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </section>
+
+  <footer>
+    I numeri sono calcolati sull'ultima candela giornaliera CHIUSA, non sul prezzo in tempo
+    reale: la data in cima alla pagina dice quale. Il prezzo di entrata invece è l'ultimo
+    scambiato, perché il rapporto rischio/rendimento va valutato al prezzo di adesso e non
+    a quello di ieri sera. Le analisi su carta non hanno tetto; le posizioni vere sì.
+  </footer>
+
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const fmt = (v,d=2) => Number(v).toLocaleString('it-IT',{minimumFractionDigits:d,maximumFractionDigits:d});
+const prz = v => Math.abs(v) >= 1 ? fmt(v,2) : Number(v).toLocaleString('it-IT',{maximumSignificantDigits:5});
+const grande = v => Number(v).toLocaleString('it-IT',{maximumFractionDigits:0});
+const data = s => s ? new Date(s).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '—';
+const oraData = s => s ? new Date(s).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+
+/* Le etichette leggibili degli enum stanno qui e solo qui: il server manda i
+   nomi, la pagina li traduce. Aggiungere un valore lato server senza toccare
+   questa mappa mostra il nome grezzo, che e' brutto ma non sbagliato. */
+const NOMI_CONTROLLI = {
+  LIQUIDITA:'liquidità', TREND:'trend', MOMENTO:'RSI',
+  DISTANZA_DALLA_MEDIA:'distanza dalla media', AMPIEZZA_STOP:'ampiezza stop',
+  RESISTENZA_INTERMEDIA:'resistenza in mezzo'
+};
+const NOMI_STATI = {
+  APERTA:'aperta', CHIUSA_ALLO_STOP:'stop', CHIUSA_ALL_OBIETTIVO:'obiettivo',
+  CHIUSA_PER_TEMPO:'tempo'
+};
+const NOMI_TRIGGER = {
+  BREAKOUT_20_GIORNI:'breakout 20g', PULLBACK_MEDIA:'pullback', MANUALE:'manuale'
+};
+
+async function chiedi(url, opzioni){
+  const risposta = await fetch(url, opzioni);
+  if (!risposta.ok) throw new Error('il server ha risposto ' + risposta.status);
+  return risposta.json();
+}
+
+async function conBottone(bottone, testoAtteso, lavoro){
+  const originale = bottone.textContent;
+  bottone.disabled = true; bottone.textContent = testoAtteso;
+  try { await lavoro(); }
+  finally { bottone.disabled = false; bottone.textContent = originale; }
+}
+
+/* ---------- statistiche ---------- */
+async function caricaStatistiche(){
+  try {
+    const s = await chiedi('/api/registro/statistiche');
+    const mancano = s.registrazioniMancanti;
+    $('statistiche').innerHTML = `
+      <div class="fig"><dt>Posizioni vere aperte</dt>
+        <dd>${s.posizioniRealiAperte} <span class="sub">tetto ${s.posizioniMassime}</span></dd></div>
+      <div class="fig"><dt>Analisi aperte</dt>
+        <dd>${s.aperte} <span class="sub">carta e reali insieme</span></dd></div>
+      <div class="fig"><dt>Chiuse</dt>
+        <dd>${s.chiuse} <span class="sub">${s.allObiettivo} all'obiettivo, ${s.alloStop} allo stop, ${s.perTempo} per tempo</span></dd></div>
+      <div class="fig"><dt>Risultato medio</dt>
+        <dd class="${s.chiuse === 0 ? '' : (s.risultatoMedioInR > 0.12 ? 'gain' : 'cost')}">${s.chiuse ? fmt(s.risultatoMedioInR,3) : '—'} R
+          <span class="sub">soglia da battere 0,12 R</span></dd></div>
+      <div class="fig"><dt>Mancano al giudizio</dt>
+        <dd>${mancano} <span class="sub">registrazioni chiuse</span></dd></div>`;
+    $('avvisoStatistiche').innerHTML = mancano > 0
+      ? `<p class="flag warn"><b>Il risultato medio non significa ancora niente</b>
+         Mancano ${mancano} registrazioni chiuse. Sotto quella soglia il numero è rumore,
+         e leggerlo come un esito è il modo più rapido per convincersi di un vantaggio
+         che non è stato misurato.</p>`
+      : `<p class="flag ok"><b>Il campione è abbastanza grande per essere guardato</b>
+         Ricorda cosa vuol dire: serve superare 0,12 R di media, che è quanto costano le
+         commissioni. Sotto quella soglia la regola perde anche facendo più verdi che rossi.</p>`;
+  } catch (e) {
+    $('avvisoStatistiche').innerHTML = `<p class="flag"><b>Statistiche non disponibili</b>${e.message}</p>`;
+  }
+}
+
+/* ---------- scansione ---------- */
+function rigaCandidato(c){
+  const bocciati = c.controlli.filter(x => x.esito === 'BOCCIATO')
+    .map(x => `${NOMI_CONTROLLI[x.controllo] || x.controllo} ${x.valore} (serve ${x.soglia})`);
+  const classi = [c.tuttiSuperati ? 'idonea' : '', bocciati.length ? 'conMotivi' : ''].join(' ').trim();
+  return `<tr class="${classi}">
+    <td class="coppia">${c.coppia}</td>
+    <td>${prz(c.quotazione.ultimo)}</td>
+    <td>${grande(c.quotazione.controvalore24h)}</td>
+    <td>${fmt(c.indicatori.rsi14,1)}</td>
+    <td>${fmt(c.indicatori.distanzaDallaMedia,1)}%</td>
+    <td>${prz(c.piano.stop)}<span class="sub">${fmt(c.piano.ampiezzaStop,1)}% sotto</span></td>
+    <td>${prz(c.piano.obiettivo)}<span class="sub">${fmt(c.piano.rapporto,2)} R</span></td>
+    <td><span class="conteggio ${c.tuttiSuperati ? 'pieno' : ''}">${c.superati}/${c.totale}</span></td>
+  </tr>` + (bocciati.length
+    ? `<tr class="motivi ${c.tuttiSuperati ? 'idonea' : ''}"><td colspan="8">bocciati: ${bocciati.join(' · ')}</td></tr>`
+    : '');
+}
+
+async function caricaScansione(){
+  $('statoScansione').textContent = 'Carico la scansione…';
+  $('tabellaScansione').hidden = true;
+  try {
+    const s = await chiedi('/api/scansione');
+    const idonee = s.candidati.filter(c => c.tuttiSuperati).length;
+    $('statoScansione').textContent =
+      `${s.esaminate} coppie esaminate su ${s.inWatchlist} in watchlist, ${idonee} con tutti i controlli superati.`
+      + (s.esaminate < s.inWatchlist ? ' Qualcuna non è stata valutata: controlla i log.' : '');
+    $('aggiornato').textContent = s.candidati.length
+      ? 'Candela chiusa del ' + data(s.candidati[0].indicatori.istanteUltimaCandela)
+        + ' · scansione delle ' + oraData(s.istante).split(', ')[1]
+      : 'Cosa passa il filtro, e cosa sta misurando il registro';
+    $('tabellaScansione').querySelector('tbody').innerHTML = s.candidati.map(rigaCandidato).join('');
+    $('tabellaScansione').hidden = false;
+  } catch (e) {
+    $('statoScansione').textContent = 'Scansione non disponibile: ' + e.message;
+  }
+}
+
+/* ---------- registro ---------- */
+function rigaOperazione(o){
+  const chiusa = o.stato !== 'APERTA';
+  const classe = !chiusa ? 'aperta' : (o.risultatoInR > 0 ? 'guadagno' : 'perdita');
+  return `<tr>
+    <td>${data(o.dataRegistrazione)}<span class="carta">${o.reale ? 'reale' : 'carta'}</span></td>
+    <td class="coppia">${o.coppia}</td>
+    <td>${NOMI_TRIGGER[o.trigger] || o.trigger}</td>
+    <td>${prz(o.entrata)}</td>
+    <td>${prz(o.stop)}</td>
+    <td>${prz(o.obiettivo)}</td>
+    <td><span class="stato ${classe}">${NOMI_STATI[o.stato] || o.stato}</span></td>
+    <td>${chiusa ? prz(o.prezzoUscita) + '<span class="sub">' + data(o.dataChiusura) + '</span>' : '—'}</td>
+    <td class="stato ${classe}">${chiusa ? fmt(o.risultatoInR,2) + ' R' : '—'}</td>
+  </tr>`;
+}
+
+async function caricaRegistro(){
+  $('statoRegistro').textContent = 'Carico il registro…';
+  $('tabellaRegistro').hidden = true;
+  try {
+    const operazioni = await chiedi('/api/registro');
+    if (!operazioni.length) {
+      $('statoRegistro').textContent =
+        'Il registro è vuoto. Si riempie da solo: il lavoro delle sette registra su carta ogni coppia idonea.';
+      return;
+    }
+    $('statoRegistro').textContent = `${operazioni.length} registrazioni, dalla più recente.`;
+    $('tabellaRegistro').querySelector('tbody').innerHTML = operazioni.map(rigaOperazione).join('');
+    $('tabellaRegistro').hidden = false;
+  } catch (e) {
+    $('statoRegistro').textContent = 'Registro non disponibile: ' + e.message;
+  }
+}
+
+/* ---------- azioni ---------- */
+$('bottoneScansione').addEventListener('click', () =>
+  conBottone($('bottoneScansione'), 'Scansiono…', caricaScansione));
+
+$('bottoneLavoro').addEventListener('click', () =>
+  conBottone($('bottoneLavoro'), 'Eseguo…', async () => {
+    const esito = await chiedi('/api/giornaliero', {method:'POST'});
+    $('statoScansione').textContent =
+      `${esito.operazioniChiuse} chiuse, ${esito.coppieIdonee} idonee, ${esito.registrateSuCarta} registrate su carta.`
+      + (esito.sceltaPerRotazione ? ` La rotazione indica ${esito.sceltaPerRotazione}.` : '');
+    await Promise.all([caricaStatistiche(), caricaRegistro(), caricaScansione()]);
+  }));
+
+$('bottoneRisoluzione').addEventListener('click', () =>
+  conBottone($('bottoneRisoluzione'), 'Chiudo…', async () => {
+    const esito = await chiedi('/api/registro/risoluzione', {method:'POST'});
+    $('statoRegistro').textContent = `${esito.chiuse} operazioni chiuse adesso.`;
+    await Promise.all([caricaStatistiche(), caricaRegistro()]);
+  }));
+
+caricaStatistiche();
+caricaScansione();
+caricaRegistro();
+</script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+/* Il guscio condiviso dalle tre pagine: token, intestazione, sezioni,
+   riquadri delle cifre, avvisi, tabelle, pie' di pagina.
+
+   Sta qui perche' era in tre copie che avevano gia' iniziato a divergere
+   da sole: .fig dd era 26px in una pagina e 25 nelle altre, section 34px
+   contro 32, th/td 10px contro 9. Nessuno se ne accorgeva, ed e' proprio
+   il motivo per cui non si sarebbero mai riallineate.
+
+   Quello che resta nelle pagine e' solo cio' che e' davvero loro: il
+   modulo e l'asse dei prezzi del calcolatore, le tabelle del journal,
+   la scansione. Le regole qui sotto si possono sovrascrivere in pagina,
+   perche' il <link> viene prima del <style>. */
+
+:root{--paper:#EDEFF1;--paper-raised:#F6F7F8;--ink:#16202B;--ink-soft:#5A6873;--rule:#C3CBD1;--rule-strong:#9AA6AF;--unknown:#8A6F2E;--cost:#A33A2B;--gain:#2C6B50;--focus:#2F5D8A;--mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;--cond:"IBM Plex Sans Condensed",system-ui,sans-serif;--prose:"Newsreader",Georgia,serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--mono);font-size:15px;line-height:1.55;padding:0 20px 80px}
+.sheet{max-width:920px;margin:0 auto}
+.masthead{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end;justify-content:space-between;padding:38px 0 14px;border-bottom:2px solid var(--ink)}
+.masthead h1{font-family:var(--cond);font-weight:600;font-size:clamp(22px,4.5vw,30px);letter-spacing:.10em;text-transform:uppercase;margin:0}
+.tagline{font-size:12px;letter-spacing:.06em;color:var(--ink-soft);margin-top:4px}
+nav{display:flex;gap:0;border:1px solid var(--rule-strong)}
+nav a{font-size:12px;padding:7px 14px;text-decoration:none;color:var(--ink-soft);border-right:1px solid var(--rule-strong)}
+nav a:last-child{border-right:0}
+nav a:hover{background:var(--paper-raised);color:var(--ink)}
+nav a[aria-current]{background:var(--ink);color:var(--paper)}
+nav a:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+section{padding:32px 0;border-bottom:1px solid var(--rule)}
+section:last-of-type{border-bottom:0}
+.eyebrow{font-family:var(--cond);font-weight:600;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft);margin:0 0 18px}
+.figures{display:grid;gap:1px;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));background:var(--rule);border:1px solid var(--rule)}
+.fig{background:var(--paper-raised);padding:15px 16px 16px}
+.fig dt{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-soft);margin:0 0 7px}
+.fig dd{margin:0;font-size:25px;font-weight:500;font-variant-numeric:tabular-nums}
+.fig .sub{display:block;font-size:12px;font-weight:400;color:var(--ink-soft);margin-top:5px}
+.fig dd.cost{color:var(--cost)}
+.fig dd.gain{color:var(--gain)}
+.flag{border-left:3px solid var(--cost);padding:10px 0 10px 17px;margin:0 0 14px;font-family:var(--prose);font-size:17px;line-height:1.5;max-width:62ch}
+.flag.warn{border-left-color:var(--unknown)}
+.flag.ok{border-left-color:var(--gain)}
+.flag b{font-family:var(--mono);font-size:14px;font-weight:600;display:block;margin-bottom:3px;letter-spacing:.02em}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:9px 11px;text-align:right;border-bottom:1px solid var(--rule);font-variant-numeric:tabular-nums}
+th{font-family:var(--cond);font-weight:600;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-soft);border-bottom:1px solid var(--ink)}
+th:first-child,td:first-child{text-align:left}
+footer{padding:26px 0;font-size:12px;color:var(--ink-soft);border-top:2px solid var(--ink);max-width:72ch;line-height:1.6}

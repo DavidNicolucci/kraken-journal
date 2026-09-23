@@ -15,6 +15,11 @@ application-local.properties
 .env
 *.log
 
+# Database del registro: e' un dato personale, non va nel repository
+dati/
+*.mv.db
+*.trace.db
+
 .DS_Store
 
 # Claude Code

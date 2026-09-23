@@ -3,12 +3,73 @@ spring:
     name: kraken-trading-journal
   jackson:
     default-property-inclusion: non_null
+  datasource:
+    # File, non memoria: il registro serve proprio a sopravvivere ai riavvii.
+    url: jdbc:h2:file:./dati/registro;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      # Va bene finche' il progetto e' personale. Il giorno in cui i dati
+      # contano davvero, questo diventa una migrazione versionata.
+      ddl-auto: update
+    open-in-view: false
 
 kraken:
   base-url: https://api.kraken.com
   # Chiave con SOLI permessi di query. Mai Trade, mai Withdraw.
   api-key: ${KRAKEN_API_KEY}
   api-secret: ${KRAKEN_API_SECRET}
+
+# Il lavoro delle sette del mattino (regola R2: una revisione al giorno,
+# a orario fisso, su candela chiusa).
+giornaliero:
+  # Le candele daily di Kraken chiudono a mezzanotte UTC: alle sette quella di
+  # ieri e' chiusa da ore, in qualunque stagione.
+  cron: "0 0 7 * * *"
+  # Esplicito, altrimenti Spring userebbe il fuso di sistema e con l'ora legale
+  # il lavoro si sposterebbe di un'ora due volte l'anno.
+  fuso: Europe/Rome
+
+# Le soglie della guida operativa. Cambiarle e' cambiare metodo:
+# farlo qui, tutto insieme, e non dentro un if.
+scansione:
+  # Congelata al 23/09/2026. Non va ricostruita con le coppie piu' scambiate
+  # del giorno: si sceglierebbero quelle sopravvissute.
+  watchlist:
+    - XBTUSD
+    - ETHUSD
+    - SOLUSD
+    - XRPUSD
+    - ADAUSD
+    - LINKUSD
+    - LTCUSD
+    - AVAXUSD
+    - DOTUSD
+    - XLMUSD
+    - AAVEUSD
+    - XDGUSD
+  volume-minimo: 1000000      # controvalore 24h nella valuta di quotazione
+  rsi-minimo: 50
+  rsi-massimo: 70
+  distanza-massima-dalla-media: 12   # %
+  ampiezza-stop-minima: 5            # %
+  ampiezza-stop-massima: 10          # %
+  # Regola di uscita 2.2: l'obiettivo si costruisce a 2 R netti commissioni.
+  # Non e' piu' un livello del grafico: dopo un breakout il massimo a 30 giorni
+  # sta sotto l'entrata e non puo' fare da obiettivo.
+  multiplo-obiettivo: 2.0
+  capitale: 203
+  rischio-per-operazione: 1          # % del capitale
+  giorni-minimo-stop: 5
+  margine-stop: 0.5                  # % sotto il minimo
+  giorni-time-stop: 15
+  registrazioni-per-giudizio: 15
+  # Regola 2.3. Vale solo per le posizioni reali: la correlazione media fra le
+  # coppie e' 0,686, quindi tre posizioni valgono 1,26 scommesse indipendenti
+  # e ne costano tre. Le analisi su carta non hanno tetto.
+  posizioni-massime: 2
+  tipo-ordine: LIMITE
 
 anthropic:
   base-url: https://api.anthropic.com

@@ -8,8 +8,10 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
+import dev.kraken.journal.scansione.ProprietaScansione;
+
 @Configuration
-@EnableConfigurationProperties({KrakenProperties.class, AnthropicProperties.class})
+@EnableConfigurationProperties({KrakenProperties.class, AnthropicProperties.class, ProprietaScansione.class})
 public class HttpClientConfig {
 
     private static SimpleClientHttpRequestFactory factory(Duration connect, Duration read) {

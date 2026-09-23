@@ -29,6 +29,20 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
+        <!-- Il registro deve sopravvivere ai riavvii e va interrogato per stato:
+             un file JSON basterebbe per il volume di dati, ma non per le query
+             ne' per l'aggiornamento concorrente. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <!-- H2 in modalita' file: un solo processo, nessun server da installare,
+             il database e' un file che si puo' copiare via come backup. -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
