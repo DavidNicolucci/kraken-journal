@@ -2,6 +2,7 @@ package dev.kraken.journal.kraken;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -11,6 +12,7 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -33,15 +35,31 @@ public class KrakenClient {
     /** Kraken restituisce al massimo 50 trade per pagina. */
     private static final int PAGE_SIZE = 50;
     private static final int MAX_PAGES = 40;
+    /**
+     * TradesHistory costa due punti del contatore privato, che si scarica di
+     * un punto ogni due o tre secondi a seconda del livello del conto. Dopo
+     * qualche pagina di fila il contatore e' pieno: la prima attesa deve gia'
+     * bastare a recuperare almeno una chiamata.
+     */
+    private static final Duration ATTESA_LIMITE = Duration.ofSeconds(3);
 
     private final RestClient restClient;
     private final KrakenSigner signer;
     private final KrakenProperties properties;
+    private final Duration attesaLimite;
 
+    @Autowired
     public KrakenClient(RestClient krakenRestClient, KrakenSigner signer, KrakenProperties properties) {
+        this(krakenRestClient, signer, properties, ATTESA_LIMITE);
+    }
+
+    /** Per i test: un'attesa vera fra i tentativi li renderebbe lenti. */
+    KrakenClient(RestClient krakenRestClient, KrakenSigner signer, KrakenProperties properties,
+                 Duration attesaLimite) {
         this.restClient = krakenRestClient;
         this.signer = signer;
         this.properties = properties;
+        this.attesaLimite = attesaLimite;
     }
 
     /**
@@ -52,6 +70,7 @@ public class KrakenClient {
     public List<KrakenTrade> fetchTrades(Instant from, Instant to) {
         List<KrakenTrade> collected = new ArrayList<>();
         int offset = 0;
+        boolean completo = false;
 
         for (int page = 0; page < MAX_PAGES; page++) {
             Map<String, String> params = new LinkedHashMap<>();
@@ -61,19 +80,26 @@ public class KrakenClient {
             params.put("end", String.valueOf(to.getEpochSecond()));
             params.put("ofs", String.valueOf(offset));
 
-            TradesHistoryResult result = callPrivate(
-                    TRADES_HISTORY, params,
-                    new ParameterizedTypeReference<KrakenEnvelope<TradesHistoryResult>>() {});
+            TradesHistoryResult result = Ritentativi.conRitentativi(TRADES_HISTORY, attesaLimite,
+                    () -> callPrivate(TRADES_HISTORY, params,
+                            new ParameterizedTypeReference<KrakenEnvelope<TradesHistoryResult>>() {}));
 
             if (result == null || result.trades() == null || result.trades().isEmpty()) {
+                completo = true;
                 break;
             }
             collected.addAll(result.trades().values());
 
             if (collected.size() >= result.count() || result.trades().size() < PAGE_SIZE) {
+                completo = true;
                 break;
             }
             offset += result.trades().size();
+        }
+
+        if (!completo) {
+            log.warn("Raggiunto il tetto di {} pagine: il journal usa solo i {} trade piu' recenti del periodo",
+                    MAX_PAGES, collected.size());
         }
 
         collected.sort(Comparator.comparing(KrakenTrade::timestamp));

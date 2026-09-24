@@ -10,6 +10,7 @@ import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientException;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -162,6 +163,12 @@ public class TradingJournalService {
                 p.openPosition());
     }
 
+    /**
+     * Se il modello non risponde (limite di frequenza, sovraccarico, timeout)
+     * il report si degrada invece di far fallire la richiesta: le metriche sono
+     * gia' calcolate e valide, e perderle per colpa della parte opzionale
+     * sarebbe buttare via la parte che conta.
+     */
     private JournalReport analyse(JournalStats stats) {
         try {
             String payload = objectMapper.writerWithDefaultPrettyPrinter()
@@ -179,7 +186,14 @@ public class TradingJournalService {
 
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Impossibile serializzare le metriche", e);
+        } catch (RestClientException e) {
+            log.warn("Il modello non ha risposto, report degradato: {}", e.getMessage());
+            return degradato("Analisi non disponibile: il servizio del modello non ha risposto. Riprova piu' tardi.");
         }
+    }
+
+    private static JournalReport degradato(String motivo) {
+        return new JournalReport(motivo, List.of(), List.of(), "Le metriche restano valide e verificabili.");
     }
 
     /**
@@ -196,10 +210,7 @@ public class TradingJournalService {
             return objectMapper.readValue(cleaned, JournalReport.class);
         } catch (JsonProcessingException e) {
             log.warn("Il modello non ha restituito JSON valido, report degradato", e);
-            return new JournalReport(
-                    "Analisi non disponibile: risposta del modello non interpretabile.",
-                    List.of(), List.of(),
-                    "Le metriche restano valide e verificabili.");
+            return degradato("Analisi non disponibile: risposta del modello non interpretabile.");
         }
     }
 }

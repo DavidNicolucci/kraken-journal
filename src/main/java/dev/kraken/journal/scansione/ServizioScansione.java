@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import dev.kraken.journal.kraken.KrakenApiException;
 import dev.kraken.journal.mercato.Intervallo;
 import dev.kraken.journal.mercato.MercatoClient;
 import dev.kraken.journal.mercato.dto.Quotazione;
@@ -26,12 +27,15 @@ import dev.kraken.journal.scansione.dto.RispostaScansione;
  *
  * Sulle prestazioni: il calcolo non conta nulla, sono qualche migliaio di
  * righe. Il costo sta tutto nelle chiamate HTTP, quindi le coppie vengono
- * scaricate in parallelo su thread virtuali e le candele sono in cache per
- * giornata dentro MercatoClient. Ottimizzare i cicli qui sarebbe lavoro
- * sprecato nel posto sbagliato.
+ * esaminate in parallelo su thread virtuali e le candele sono in cache per
+ * giornata dentro MercatoClient, che limita anche quante chiamate partono
+ * insieme. Ottimizzare i cicli qui sarebbe lavoro sprecato nel posto sbagliato.
  *
  * Una coppia che fallisce non ferma la scansione: viene loggata e saltata, e
- * il conteggio in uscita rende visibile che manca.
+ * il conteggio in uscita rende visibile che manca. Vale anche per le
+ * quotazioni: se Kraken rifiuta la richiesta in blocco, per esempio perche'
+ * una coppia della watchlist e' stata tolta dal listino, si chiedono una per
+ * una, e solo quella che non esiste piu' resta fuori.
  */
 @Service
 public class ServizioScansione {
@@ -50,7 +54,7 @@ public class ServizioScansione {
     }
 
     public RispostaScansione scansiona() {
-        Map<String, Quotazione> quotazioni = mercatoClient.quotazioni(proprieta.watchlist());
+        Map<String, Quotazione> quotazioni = quotazioniInBlocco();
 
         List<Candidato> candidati;
         try (var esecutore = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -70,8 +74,24 @@ public class ServizioScansione {
                         .toList());
     }
 
+    /** Mappa vuota se la richiesta in blocco viene rifiutata: ogni coppia chiedera' la sua. */
+    private Map<String, Quotazione> quotazioniInBlocco() {
+        try {
+            return mercatoClient.quotazioni(proprieta.watchlist());
+        } catch (KrakenApiException e) {
+            log.warn("Quotazioni in blocco rifiutate, le chiedo una coppia per volta: {}", e.getMessage());
+            return Map.of();
+        }
+    }
+
     private Candidato esamina(String coppia, Map<String, Quotazione> quotazioni) {
         Quotazione quotazione = trovaQuotazione(coppia, quotazioni);
+        if (quotazione == null) {
+            quotazione = trovaQuotazione(coppia, mercatoClient.quotazioni(List.of(coppia)));
+        }
+        if (quotazione == null) {
+            throw new IllegalStateException("Quotazione mancante per " + coppia);
+        }
         Indicatori indicatori = CalcolatoreIndicatori.calcola(
                 mercatoClient.candeleChiuse(coppia, Intervallo.GIORNALIERO),
                 proprieta.giorniMinimoStop());
@@ -112,6 +132,8 @@ public class ServizioScansione {
     /**
      * Kraken risponde con il nome interno della coppia, che non sempre coincide
      * con quello richiesto: si chiede XBTUSD e torna XXBTZUSD.
+     *
+     * @return null se la coppia non c'e'.
      */
     private static Quotazione trovaQuotazione(String coppia, Map<String, Quotazione> quotazioni) {
         Quotazione diretta = quotazioni.get(coppia);
@@ -122,7 +144,7 @@ public class ServizioScansione {
                 .filter(q -> q.coppia().replace("X", "").replace("Z", "")
                         .equals(coppia.replace("X", "").replace("Z", "")))
                 .findFirst()
-                .orElseThrow(() -> new IllegalStateException("Quotazione mancante per " + coppia));
+                .orElse(null);
     }
 
     private static Candidato attendi(Future<Candidato> futuro) {

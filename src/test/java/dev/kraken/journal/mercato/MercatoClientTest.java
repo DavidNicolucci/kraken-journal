@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import java.time.Duration;
 import java.util.List;
 
 import org.hamcrest.Matchers;
@@ -41,6 +42,22 @@ class MercatoClientTest {
 
         assertEquals(2, candele.size(), "la terza candela e' quella di oggi, non e' chiusa");
         assertEquals(110, candele.get(1).chiusura(), 0.0001);
+        server.verify();
+    }
+
+    @Test
+    void ritentaQuandoKrakenRifiutaPerTroppeRichieste() {
+        RestClient.Builder costruttore = RestClient.builder().baseUrl("https://api.kraken.com");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(costruttore).build();
+        server.expect(requestTo(Matchers.containsString("/0/public/OHLC")))
+                .andRespond(withSuccess("{\"error\":[\"EGeneral:Too many requests\"]}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(Matchers.containsString("/0/public/OHLC")))
+                .andRespond(withSuccess(TRE_CANDELE, MediaType.APPLICATION_JSON));
+
+        List<Candela> candele = new MercatoClient(costruttore.build(), Duration.ZERO)
+                .candeleChiuse("XBTUSD", Intervallo.GIORNALIERO);
+
+        assertEquals(2, candele.size(), "la coppia non deve sparire dalla scansione del giorno");
         server.verify();
     }
 

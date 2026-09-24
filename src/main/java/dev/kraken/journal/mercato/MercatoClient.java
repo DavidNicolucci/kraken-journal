@@ -1,5 +1,6 @@
 package dev.kraken.journal.mercato;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -8,9 +9,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -18,6 +21,7 @@ import org.springframework.web.client.RestClient;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import dev.kraken.journal.kraken.KrakenApiException;
+import dev.kraken.journal.kraken.Ritentativi;
 import dev.kraken.journal.kraken.dto.KrakenEnvelope;
 import dev.kraken.journal.mercato.dto.Candela;
 import dev.kraken.journal.mercato.dto.Quotazione;
@@ -31,6 +35,11 @@ import dev.kraken.journal.mercato.dto.Quotazione;
  * significherebbe far passare dati pubblici attraverso la catena di firma per
  * nessun motivo. Riusa pero' lo stesso bean RestClient, lo stesso involucro
  * KrakenEnvelope e la stessa eccezione: l'integrazione e' una sola.
+ *
+ * Gli endpoint pubblici hanno un limite di frequenza e la scansione chiama
+ * da piu' thread insieme: qui le chiamate contemporanee sono al massimo
+ * {@value #CHIAMATE_CONTEMPORANEE}, e un rifiuto per troppe richieste viene
+ * ritentato invece di far sparire la coppia dalla scansione del giorno.
  */
 @Component
 public class MercatoClient {
@@ -40,16 +49,28 @@ public class MercatoClient {
     private static final String QUOTAZIONI = "/0/public/Ticker";
     /** Kraken mette in coda ai risultati OHLC una chiave di servizio. */
     private static final String CHIAVE_DI_SERVIZIO = "last";
+    private static final int CHIAMATE_CONTEMPORANEE = 2;
+    private static final Duration ATTESA_LIMITE = Duration.ofSeconds(1);
 
     private final RestClient restClient;
+    private final Duration attesaLimite;
+    /** Vale per tutti i chiamanti, non solo per la scansione: il limite e' per indirizzo. */
+    private final Semaphore permessi = new Semaphore(CHIAMATE_CONTEMPORANEE);
     /** Le candele giornaliere cambiano una volta al giorno: riscaricarle a ogni
      *  scansione e' l'unico spreco vero di questo modulo. */
     private final Map<ChiaveCache, List<Candela>> cache = new ConcurrentHashMap<>();
 
     private record ChiaveCache(String coppia, Intervallo intervallo, LocalDate giorno) {}
 
+    @Autowired
     public MercatoClient(RestClient krakenRestClient) {
+        this(krakenRestClient, ATTESA_LIMITE);
+    }
+
+    /** Per i test: un'attesa vera fra i tentativi li renderebbe lenti. */
+    MercatoClient(RestClient krakenRestClient, Duration attesaLimite) {
         this.restClient = krakenRestClient;
+        this.attesaLimite = attesaLimite;
     }
 
     /**
@@ -99,6 +120,25 @@ public class MercatoClient {
     }
 
     private JsonNode chiama(String uri) {
+        return Ritentativi.conRitentativi(uri, attesaLimite, () -> conPermesso(uri));
+    }
+
+    /** Il permesso si tiene solo durante la chiamata, non durante l'attesa fra due tentativi. */
+    private JsonNode conPermesso(String uri) {
+        try {
+            permessi.acquire();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Chiamata a Kraken interrotta", e);
+        }
+        try {
+            return chiamaUnaVolta(uri);
+        } finally {
+            permessi.release();
+        }
+    }
+
+    private JsonNode chiamaUnaVolta(String uri) {
         KrakenEnvelope<JsonNode> busta = restClient.get()
                 .uri(uri)
                 .retrieve()

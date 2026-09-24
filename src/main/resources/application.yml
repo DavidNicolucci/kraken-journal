@@ -1,3 +1,9 @@
+# Solo da questo computer. Senza, Spring ascolta su tutte le interfacce e
+# chiunque sia sulla stessa rete puo' leggere lo storico dei trade, consumare
+# token Anthropic e scrivere nel registro: non c'e' autenticazione.
+server:
+  address: 127.0.0.1
+
 spring:
   application:
     name: kraken-trading-journal

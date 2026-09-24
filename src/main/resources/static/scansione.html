@@ -120,6 +120,10 @@ tr.conMotivi td{border-bottom:0;padding-bottom:4px}
 </div>
 <script>
 const $ = id => document.getElementById(id);
+/* Tutto quello che arriva dal registro passa di qui prima di finire in
+   innerHTML: la coppia la scrive chi chiama POST /api/registro. */
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt = (v,d=2) => Number(v).toLocaleString('it-IT',{minimumFractionDigits:d,maximumFractionDigits:d});
 const prz = v => Math.abs(v) >= 1 ? fmt(v,2) : Number(v).toLocaleString('it-IT',{maximumSignificantDigits:5});
 const grande = v => Number(v).toLocaleString('it-IT',{maximumFractionDigits:0});
@@ -181,17 +185,17 @@ async function caricaStatistiche(){
          Ricorda cosa vuol dire: serve superare 0,12 R di media, che è quanto costano le
          commissioni. Sotto quella soglia la regola perde anche facendo più verdi che rossi.</p>`;
   } catch (e) {
-    $('avvisoStatistiche').innerHTML = `<p class="flag"><b>Statistiche non disponibili</b>${e.message}</p>`;
+    $('avvisoStatistiche').innerHTML = `<p class="flag"><b>Statistiche non disponibili</b>${esc(e.message)}</p>`;
   }
 }
 
 /* ---------- scansione ---------- */
 function rigaCandidato(c){
   const bocciati = c.controlli.filter(x => x.esito === 'BOCCIATO')
-    .map(x => `${NOMI_CONTROLLI[x.controllo] || x.controllo} ${x.valore} (serve ${x.soglia})`);
+    .map(x => `${NOMI_CONTROLLI[x.controllo] || esc(x.controllo)} ${esc(x.valore)} (serve ${esc(x.soglia)})`);
   const classi = [c.tuttiSuperati ? 'idonea' : '', bocciati.length ? 'conMotivi' : ''].join(' ').trim();
   return `<tr class="${classi}">
-    <td class="coppia">${c.coppia}</td>
+    <td class="coppia">${esc(c.coppia)}</td>
     <td>${prz(c.quotazione.ultimo)}</td>
     <td>${grande(c.quotazione.controvalore24h)}</td>
     <td>${fmt(c.indicatori.rsi14,1)}</td>
@@ -230,8 +234,8 @@ function rigaOperazione(o){
   const classe = !chiusa ? 'aperta' : (o.risultatoInR > 0 ? 'guadagno' : 'perdita');
   return `<tr>
     <td>${data(o.dataRegistrazione)}<span class="carta">${o.reale ? 'reale' : 'carta'}</span></td>
-    <td class="coppia">${o.coppia}</td>
-    <td>${NOMI_TRIGGER[o.trigger] || o.trigger}</td>
+    <td class="coppia">${esc(o.coppia)}</td>
+    <td>${NOMI_TRIGGER[o.trigger] || esc(o.trigger)}</td>
     <td>${prz(o.entrata)}</td>
     <td>${prz(o.stop)}</td>
     <td>${prz(o.obiettivo)}</td>
