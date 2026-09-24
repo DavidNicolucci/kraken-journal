@@ -1,6 +1,7 @@
 package dev.kraken.journal.calcolatore;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -79,6 +80,26 @@ class ServizioCalcolatoreTest {
         EsitoValutazione e = servizio.valuta(new RichiestaValutazione(
                 203, 1, Verso.ACQUISTO, 100, 99.9, 110, 0.40, 0.40));
         assertTrue(e.capitaleSuperato());
+    }
+
+    @Test
+    void unObiettivoSottoIlPareggioNonHaUnaPercentualeDiSuccesso() {
+        // Pareggio a 72,58: a 72,30 il prezzo va nella direzione giusta ma si perde.
+        EsitoValutazione e = servizio.valuta(acquisto(72.00, 68.00, 72.30));
+
+        assertTrue(e.obiettivoNonCopreICosti());
+        assertTrue(e.guadagnoAllObiettivo() < 0, "all'obiettivo si perde, e il numero lo deve dire");
+        assertTrue(e.rapporto() < 0);
+        assertNull(e.percentualeMinimaDiSuccesso(),
+                "nessuna percentuale di successo porta in pari: non va inventata");
+    }
+
+    @Test
+    void unObiettivoOltreIlPareggioCopreICosti() {
+        EsitoValutazione e = servizio.valuta(acquisto(72.00, 68.00, 79.98));
+
+        assertFalse(e.obiettivoNonCopreICosti());
+        assertEquals(100 / (1 + e.rapporto()), e.percentualeMinimaDiSuccesso(), 0.000001);
     }
 
     private static RichiestaValutazione acquisto(double entrata, double stop, double obiettivo) {

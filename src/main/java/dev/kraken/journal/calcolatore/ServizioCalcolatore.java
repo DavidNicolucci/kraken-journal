@@ -53,12 +53,18 @@ public class ServizioCalcolatore {
         Double guadagno = null;
         Double rapporto = null;
         Double percentualeMinima = null;
+        boolean obiettivoNonCopreICosti = false;
         if (richiesta.obiettivoCoerente()) {
             double guadagnoPerUnita = MatematicaOperazione.risultatoPerUnita(
                     entrata, richiesta.obiettivo(), richiesta.verso(), cIn, cOut);
             guadagno = quantita * guadagnoPerUnita;
             rapporto = guadagnoPerUnita / perditaPerUnita;
-            percentualeMinima = 100 / (1 + rapporto);
+            // Obiettivo fra entrata e pareggio: anche vincendo sempre si perde,
+            // quindi non esiste una percentuale di successo che basti.
+            obiettivoNonCopreICosti = guadagnoPerUnita <= 0;
+            if (!obiettivoNonCopreICosti) {
+                percentualeMinima = 100 / (1 + rapporto);
+            }
         }
 
         double commissioniTotali = commissioneInEntrata + commissioneInUscita;
@@ -68,6 +74,7 @@ public class ServizioCalcolatore {
                 pareggio, pareggioPercentuale, guadagno, rapporto, percentualeMinima,
                 controvalore > richiesta.capitale(),
                 pareggioPercentuale >= distanzaPercentuale,
-                rischioAmmesso > 0 && commissioniTotali > rischioAmmesso * QUOTA_COMMISSIONI_PESANTI);
+                rischioAmmesso > 0 && commissioniTotali > rischioAmmesso * QUOTA_COMMISSIONI_PESANTI,
+                obiettivoNonCopreICosti);
     }
 }

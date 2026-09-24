@@ -236,7 +236,10 @@ async function chiedi(){
 
 function mostra(v, e){
   const acquisto = v.verso === 'ACQUISTO';
-  const rapporto = e.rapporto;
+  // Il server omette i campi nulli (default-property-inclusion: non_null):
+  // senza obiettivo il rapporto arriva undefined, non null.
+  const rapporto = e.rapporto ?? null;
+  const sottoIlPareggio = rapporto !== null && e.obiettivoNonCopreICosti;
 
   const flags = [];
   if (e.costiOltreLoStop) flags.push(`<p class="flag"><b>Le commissioni superano lo stop</b>
@@ -253,7 +256,11 @@ function mostra(v, e){
     Paghi ${fmt(e.commissioniTotali,3)} di commissioni a fronte di ${fmt(e.rischioAmmesso,2)} di rischio:
     ${pct(e.commissioniTotali / e.rischioAmmesso * 100)} del capitale che hai messo in gioco se ne va in costi.
     Operazioni piccole subiscono i costi fissi in modo sproporzionato.</p>`);
-  if (rapporto !== null && rapporto < 1) flags.push(`<p class="flag"><b>Rischi più di quanto punti a guadagnare</b>
+  if (sottoIlPareggio) flags.push(`<p class="flag"><b>L'obiettivo non copre le commissioni</b>
+    Il prezzo di pareggio è ${prz(e.pareggio)}: l'obiettivo sta prima, quindi anche raggiungendolo
+    perdi ${fmt(-e.guadagnoAllObiettivo,2)}. Nessuna percentuale di successo rende questa operazione
+    positiva. Serve un obiettivo oltre il pareggio.</p>`);
+  else if (rapporto !== null && rapporto < 1) flags.push(`<p class="flag"><b>Rischi più di quanto punti a guadagnare</b>
     All'obiettivo porti a casa ${fmt(e.guadagnoAllObiettivo,2)}, allo stop ne perdi ${fmt(e.rischioAmmesso,2)}.
     Con un rapporto di ${fmt(rapporto,2)} a 1 devi indovinare piu' di ${pct(e.percentualeMinimaDiSuccesso)}
     delle volte solo per non perdere.</p>`);
@@ -281,10 +288,12 @@ function mostra(v, e){
     <div class="fig"><dt>Pareggi a</dt>
       <dd>${prz(e.pareggio)}<span class="sub">${acquisto ? '+' : '&minus;'}${pct(e.pareggioPercentuale)} dall'entrata</span></dd></div>
     ${rapporto !== null ? `
-    <div class="fig"><dt>Guadagni all'obiettivo</dt>
-      <dd class="gain">${fmt(e.guadagnoAllObiettivo,2)}<span class="sub">al netto delle commissioni</span></dd></div>
+    <div class="fig"><dt>${sottoIlPareggio ? "Perdi all'obiettivo" : "Guadagni all'obiettivo"}</dt>
+      <dd class="${sottoIlPareggio ? 'cost' : 'gain'}">${fmt(e.guadagnoAllObiettivo,2)}<span class="sub">al netto delle commissioni</span></dd></div>
     <div class="fig"><dt>Rapporto rischio/rendimento</dt>
-      <dd>${fmt(rapporto,2)} : 1<span class="sub">serve indovinare ${pct(e.percentualeMinimaDiSuccesso)} delle volte per pareggiare</span></dd></div>` : ''}`;
+      <dd>${fmt(rapporto,2)} : 1<span class="sub">${sottoIlPareggio
+        ? 'nessuna percentuale di successo porta in pari'
+        : `serve indovinare ${pct(e.percentualeMinimaDiSuccesso)} delle volte per pareggiare`}</span></dd></div>` : ''}`;
 
   const conObiettivo = rapporto !== null;
   const punti = [v.stop, v.entrata, e.pareggio].concat(conObiettivo ? [v.obiettivo] : []);

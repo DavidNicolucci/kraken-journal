@@ -8,8 +8,12 @@ package dev.kraken.journal.calcolatore.dto;
  *        sbagliata. Null e non zero: "non calcolabile" e "vale zero" sono due
  *        cose diverse, e confonderle e' un errore che il journal ha gia' fatto
  *        una volta.
+ * @param percentualeMinimaDiSuccesso null anche quando l'obiettivo non copre
+ *        i costi: nessuna percentuale di successo porta in pari.
  * @param costiOltreLoStop le commissioni chiedono al prezzo un movimento piu'
  *        grande della distanza dello stop: l'operazione perde comunque.
+ * @param obiettivoNonCopreICosti l'obiettivo sta fra entrata e pareggio: e'
+ *        dalla parte giusta del prezzo, ma raggiungerlo fa perdere lo stesso.
  */
 public record EsitoValutazione(
         double rischioAmmesso,
@@ -28,5 +32,6 @@ public record EsitoValutazione(
         Double percentualeMinimaDiSuccesso,
         boolean capitaleSuperato,
         boolean costiOltreLoStop,
-        boolean commissioniPesanti) {
+        boolean commissioniPesanti,
+        boolean obiettivoNonCopreICosti) {
 }
