@@ -125,7 +125,7 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt = (v,d=2) => Number(v).toLocaleString('it-IT',{minimumFractionDigits:d,maximumFractionDigits:d});
-const prz = v => Math.abs(v) >= 1 ? fmt(v,2) : Number(v).toLocaleString('it-IT',{maximumSignificantDigits:5});
+const prz = v => Number(v).toLocaleString('it-IT',{maximumSignificantDigits:6});
 const grande = v => Number(v).toLocaleString('it-IT',{maximumFractionDigits:0});
 const data = s => s ? new Date(s).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '—';
 const oraData = s => s ? new Date(s).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';

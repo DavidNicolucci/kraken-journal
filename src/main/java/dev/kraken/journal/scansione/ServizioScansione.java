@@ -113,9 +113,13 @@ public class ServizioScansione {
                         i.rsi14() >= proprieta.rsiMinimo() && i.rsi14() <= proprieta.rsiMassimo(),
                         arrotonda(i.rsi14(), 1),
                         "tra " + arrotonda(proprieta.rsiMinimo(), 0) + " e " + arrotonda(proprieta.rsiMassimo(), 0)),
+                // Valore assoluto: la distanza conta in entrambe le direzioni.
+                // Col segno, un prezzo molto SOTTO la media superava il controllo
+                // senza che volesse dire niente. Indicatori resta col segno:
+                // serve alla colonna della tabella e al riepilogo giornaliero.
                 EsitoControllo.di(Controllo.DISTANZA_DALLA_MEDIA,
-                        i.distanzaDallaMedia() <= proprieta.distanzaMassimaDallaMedia(),
-                        arrotonda(i.distanzaDallaMedia(), 1) + "%",
+                        Math.abs(i.distanzaDallaMedia()) <= proprieta.distanzaMassimaDallaMedia(),
+                        arrotonda(Math.abs(i.distanzaDallaMedia()), 1) + "%",
                         "<= " + arrotonda(proprieta.distanzaMassimaDallaMedia(), 0) + "%"),
                 EsitoControllo.di(Controllo.AMPIEZZA_STOP,
                         piano.ampiezzaStop() >= proprieta.ampiezzaStopMinima()
