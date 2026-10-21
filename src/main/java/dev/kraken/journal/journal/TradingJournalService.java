@@ -209,7 +209,7 @@ public class TradingJournalService {
         try {
             return objectMapper.readValue(cleaned, JournalReport.class);
         } catch (JsonProcessingException e) {
-            log.warn("Il modello non ha restituito JSON valido, report degradato", e);
+            log.warn("Il modello non ha restituito JSON valido, report degradato: {}", e.getOriginalMessage());
             return degradato("Analisi non disponibile: risposta del modello non interpretabile.");
         }
     }
