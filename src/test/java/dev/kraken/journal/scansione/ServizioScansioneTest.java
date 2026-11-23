@@ -47,23 +47,45 @@ class ServizioScansioneTest {
     }
 
     /**
-     * Il caso che mancava: finche' nessun test fa passare tutti e sei i
-     * controlli, una scansione rotta che boccia sempre e una scansione corretta
-     * in un mercato in discesa producono lo stesso identico risultato.
+     * Il caso che mancava: finche' nessun test fa passare tutti i controlli,
+     * una scansione rotta che boccia sempre e una scansione corretta in un
+     * mercato in discesa producono lo stesso identico risultato.
      */
     @Test
-    void unaCoppiaInTendenzaRialzistaSuperaTuttiESeiIControlli() {
+    void unaRotturaConVolumeInTendenzaRialzistaSuperaTuttiIControlli() {
+        Candidato candidato = esamina(candeleConRottura(2.0), 163.40);
+
+        assertTrue(candidato.tuttiSuperati(), bocciati(candidato));
+        assertEquals(7, candidato.superati());
+    }
+
+    /**
+     * La stessa tendenza senza rottura: prima superava tutto e finiva nel
+     * registro come "breakout". Adesso il trigger la ferma.
+     */
+    @Test
+    void senzaRotturaIlTriggerNonScatta() {
+        Candidato candidato = esamina(candeleConRitracciamenti(), 155.35);
+
+        assertEquals(Esito.BOCCIATO, esitoDi(candidato, Controllo.BREAKOUT));
+    }
+
+    /** Il prezzo rompe, ma con il volume di un giorno qualunque: non e' il trigger scritto nella guida. */
+    @Test
+    void unaRotturaSenzaVolumeNonBasta() {
+        Candidato candidato = esamina(candeleConRottura(1.0), 163.40);
+
+        assertEquals(Esito.BOCCIATO, esitoDi(candidato, Controllo.BREAKOUT));
+    }
+
+    private static Candidato esamina(List<Candela> candele, double ultimo) {
         var proprieta = proprieta(List.of("XBTUSD"));
         MercatoClient mercato = mock(MercatoClient.class);
         when(mercato.quotazioni(List.of("XBTUSD")))
-                .thenReturn(Map.of("XXBTZUSD", quotazione("XXBTZUSD", 166)));
-        when(mercato.candeleChiuse(any(), any(Intervallo.class))).thenReturn(candeleConRitracciamenti());
-
-        Candidato candidato = new ServizioScansione(mercato, new ValutatoreSetup(proprieta), proprieta)
+                .thenReturn(Map.of("XXBTZUSD", quotazione("XXBTZUSD", ultimo)));
+        when(mercato.candeleChiuse(any(), any(Intervallo.class))).thenReturn(candele);
+        return new ServizioScansione(mercato, new ValutatoreSetup(proprieta), proprieta)
                 .scansiona().candidati().get(0);
-
-        assertTrue(candidato.tuttiSuperati(), bocciati(candidato));
-        assertEquals(6, candidato.superati());
     }
 
     /**
@@ -109,6 +131,20 @@ class ServizioScansioneTest {
         return serie(giorno -> 100 + giorno * 0.75 + 4 * Math.sin((giorno + 3) * 2 * Math.PI / 7));
     }
 
+    /**
+     * La serie con ritracciamenti, con l'ultima candela che chiude mezzo punto
+     * sopra il massimo dei venti giorni prima (162,90). Una rottura piu' ampia
+     * porterebbe l'RSI sopra 70 e la boccerebbe il controllo sul momento.
+     */
+    private static List<Candela> candeleConRottura(double multiploVolume) {
+        List<Candela> candele = new ArrayList<>(candeleConRitracciamenti());
+        Candela ultima = candele.remove(candele.size() - 1);
+        double chiusura = 163.40;
+        candele.add(new Candela(ultima.istante(), chiusura - 1, chiusura + 2, chiusura - 3, chiusura, chiusura,
+                10_000 * multiploVolume));
+        return candele;
+    }
+
     /** Settanta giorni di salita e dieci di crollo: media ancora alta, prezzo molto sotto. */
     private static List<Candela> candeleCrollateDopoLaSalita() {
         return serie(giorno -> giorno < 70 ? 100 + giorno : 169 - 8.0 * (giorno - 69));
@@ -131,7 +167,7 @@ class ServizioScansioneTest {
 
     private static ProprietaScansione proprieta(List<String> watchlist) {
         return new ProprietaScansione(watchlist, 1_000_000, 50, 70, 12, 5, 10, 2.0,
-                203, 1, 5, 0.5, 15, 15, 2, TipoOrdine.LIMITE);
+                203, 1, 5, 0.5, 15, 15, 2, TipoOrdine.LIMITE, 20, 1.5);
     }
 
     private static Esito esitoDi(Candidato candidato, Controllo controllo) {

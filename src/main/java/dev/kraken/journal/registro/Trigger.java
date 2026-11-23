@@ -12,7 +12,8 @@ package dev.kraken.journal.registro;
  */
 public enum Trigger {
 
-    BREAKOUT_20_GIORNI("chiusura sopra il massimo a 20 giorni con volume >= 1,5x la media"),
+    /** Le soglie stanno in scansione.giorni-breakout e scansione.multiplo-volume-breakout. */
+    BREAKOUT_20_GIORNI("chiusura sopra il massimo dei giorni precedenti, con volume sopra la media"),
     PULLBACK_MEDIA("ritorno sulla media a 20 in trend, con candela di ripresa"),
     MANUALE("decisione presa fuori da una regola scritta");
 

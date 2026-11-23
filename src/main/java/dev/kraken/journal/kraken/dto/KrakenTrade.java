@@ -21,7 +21,9 @@ public record KrakenTrade(
         BigDecimal cost,
         BigDecimal fee,
         BigDecimal vol,
-        BigDecimal margin
+        BigDecimal margin,
+        /** true se l'ordine era in coda sul book (tariffa maker), false se e' stato eseguito subito (taker). */
+        Boolean maker
 ) {
     public Instant timestamp() {
         long epochMillis = time.multiply(BigDecimal.valueOf(1000)).longValue();

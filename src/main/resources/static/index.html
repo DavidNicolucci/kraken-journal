@@ -101,13 +101,8 @@ section{padding:34px 0;border-bottom:1px solid var(--rule)}
 
 /* ---------- cifre ---------- */
 
-.figures{
-  display:grid;gap:1px;
-  grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
-  background:var(--rule);border:1px solid var(--rule);
-}
-
 .fig dd.muted{color:var(--unknown)}
+.sub-inline{font-size:.6em;color:var(--ink-soft);letter-spacing:.04em}
 
 /* ---------- costi ---------- */
 
@@ -226,6 +221,8 @@ tbody tr:hover td{background:var(--paper-raised)}
 
 <script>
 const out = document.getElementById('out');
+/** Tariffe di Kraken Pro in percentuale, dal server (TipoOrdine). */
+let tariffe = {};
 const periodEl = document.getElementById('period');
 
 const MESI = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
@@ -237,11 +234,57 @@ const num  = (v, d = 2) => v === null || v === undefined
 /** Percentuale di commissione effettivamente pagata su una coppia. */
 const feePct = p => p.feesToVolumePercent ?? (p.volumeQuote > 0 ? (p.feesPaid / p.volumeQuote) * 100 : 0);
 
+/** Un valore per ogni valuta, ciascuno con il suo codice: EUR e USD non si sommano. */
+const perValuta = (totali, valore) => totali
+  .map(t => ({ v: valore(t), c: t.valuta }))
+  .filter(x => x.v !== null && x.v !== undefined)
+  .map(x => `${x.v} <span class="sub-inline">${esc(x.c)}</span>`)
+  .join('<br>') || '—';
+
+/** Quota del volume di Kraken Pro eseguita subito, alla tariffa taker. Null se non si sa. */
+const quotaTaker = t => {
+  const noto = t.volumeMaker + t.volumeTaker;
+  return noto > 0 ? num(t.volumeTaker / noto * 100, 0) + '%' : null;
+};
+
+const segno = v => (v > 0 ? '+' : '') + num(v);
+const classeSegno = v => v >= 0 ? 'pos' : 'neg';
+
+/** Perché il risultato di una coppia non è completo, con la provenienza letta dal ledger. */
+function motivoIncompleto(p) {
+  const parti = [];
+  if (p.unmatchedSellVolume > 0) {
+    parti.push(`Venduto ${num(p.unmatchedSellVolume, 4)} senza un acquisto in tutto lo storico`
+      + (p.provenienze?.length ? `: risulta da ${p.provenienze.join(', ')}` : ''));
+  }
+  if (p.quantitaInAltraValuta > 0) {
+    parti.push(`Venduto ${num(p.quantitaInAltraValuta, 4)} comprato in un'altra valuta, in giorni senza un cambio`);
+  }
+  return parti.join('. ') + '.';
+}
+
+/** Segnala un risultato che contiene un costo convertito da un'altra valuta. */
+const tagCambio = p => p.quantitaConvertita > 0
+  ? `<span class="tag" title="Venduto ${num(p.quantitaConvertita, 4)} comprato in un'altra valuta: il costo è convertito al cambio medio del giorno della vendita">cambio</span>`
+  : '';
+
 function render(j) {
   const s = j.stats, r = j.report;
   const pairs   = s.byPair || [];
   const trading = pairs.filter(p => !p.fxConversion);
   const fx      = pairs.filter(p => p.fxConversion);
+  const totali  = s.totaliPerValuta || [];
+  const ordiniTrading = (s.ordini || []).filter(o => !o.conversione).length;
+  // Un cambio eseguito in sette pezzi e' una conversione sola: si contano gli ordini.
+  const ordiniCambio  = (s.ordini || []).filter(o => o.conversione).length;
+  const conversioni   = n => n === 1 ? 'una conversione valutaria' : `${n} conversioni valutarie`;
+  // Le commissioni di cambio sono in valute diverse (USD/EUR in EUR, EUR/USD in USD): una riga per valuta.
+  const commissioniCambio = Object.values(fx.reduce((acc, p) => {
+    (acc[p.quoteCurrency] ??= {valuta: p.quoteCurrency, commissioni: 0}).commissioni += p.feesPaid;
+    return acc;
+  }, {}));
+  const chiuse  = s.operazioniChiuse || [];
+  const aperte  = s.posizioniAperte || [];
 
   periodEl.textContent = `${data(s.periodStart)} — ${data(s.periodEnd)}`;
 
@@ -250,27 +293,35 @@ function render(j) {
   const volNoto  = trading.filter(p => p.pnlComplete).reduce((a, p) => a + p.volumeQuote, 0);
   const pctNoto  = volTot > 0 ? (volNoto / volTot) * 100 : 0;
 
-  // La scala arriva sempre almeno allo 0,80%: sotto quella soglia le barre
-  // sarebbero enormi e il confronto con le aliquote perderebbe senso.
-  const maxPct = Math.max(0.9, ...pairs.map(feePct)) * 1.08;
+  // La scala arriva sempre oltre la tariffa piu' alta: sotto quella soglia le
+  // barre sarebbero enormi e il confronto con le aliquote perderebbe senso.
+  const maxPct = Math.max(tariffe.MERCATO * 1.12, ...pairs.map(feePct)) * 1.08;
 
   out.innerHTML = `
   <section class="fade">
+    ${s.ledgerLetto === false ? `<p class="notice">
+      <b>Mancano le operazioni fatte dall'app.</b>
+      La chiave API non ha il permesso <i>Query Ledger Entries</i>: il journal
+      vede solo gli ordini di Kraken Pro, e le vendite di monete comprate
+      dall'app risultano senza acquisto.
+    </p>` : ''}
     ${s.mixedQuoteCurrencies ? `<p class="notice">
-      <b>Valute miste (${s.quoteCurrencies.join(', ')}).</b>
-      I totali qui sotto sommano importi in valute diverse. Leggili come ordine
-      di grandezza. I valori per coppia sono nella loro valuta e sono esatti.
+      <b>Valute diverse (${s.quoteCurrencies.join(', ')}).</b>
+      Le cifre qui sotto sono date per ogni valuta, senza sommarle fra loro.
     </p>` : ''}
 
     <p class="eyebrow">Attività del periodo</p>
     <div class="thesis">
-      <span class="n">${s.tradingTrades}</span>
-      <span class="what">operazioni di trading</span>
+      <span class="n">${ordiniTrading}</span>
+      <span class="what">ordin${ordiniTrading === 1 ? 'e' : 'i'} di trading</span>
     </div>
     <p class="thesis-note">
-      Kraken ne ha registrate ${s.totalOperations}${s.fxConversions > 0
-        ? `, ma ${s.fxConversions} erano cambi valuta: spostare denaro, non prendere posizione`
+      Kraken ha registrato ${s.totalOperations} esecuzion${s.totalOperations === 1 ? 'e' : 'i'}${s.fxConversions > 0
+        ? `, di cui ${s.fxConversions} per ${conversioni(ordiniCambio)}: spostare denaro, non prendere posizione`
         : ''}.
+      ${s.tradingTrades > ordiniTrading
+        ? `Alcuni ordini sono stati eseguiti in più pezzi: qui contano una volta.`
+        : ''}
       ${s.tradingDays > 0
         ? `Concentrate in ${s.tradingDays} giorn${s.tradingDays === 1 ? 'o' : 'i'}.`
         : ''}
@@ -285,7 +336,7 @@ function render(j) {
       </div>
       <div class="cov-legend">
         <span><i class="swatch known"></i> ${pctNoto.toFixed(0)}% costo di carico noto</span>
-        <span><i class="swatch unknown"></i> ${(100 - pctNoto).toFixed(0)}% acquistato prima del periodo</span>
+        <span><i class="swatch unknown"></i> ${(100 - pctNoto).toFixed(0)}% su coppie con vendite senza costo di carico</span>
       </div>
     </div>
   </section>
@@ -295,21 +346,33 @@ function render(j) {
     <dl class="figures">
       <div class="fig">
         <dt>Volume di trading</dt>
-        <dd>${num(s.tradingVolumeQuote)}</dd>
+        <dd>${perValuta(totali, t => num(t.volume))}</dd>
       </div>
       <div class="fig">
         <dt>Commissioni di trading</dt>
-        <dd>${num(s.tradingFees, 3)}<span class="sub">${num(s.feesToVolumePercent)}% del volume</span></dd>
+        <dd>${perValuta(totali, t => num(t.commissioni, 3))}<span class="sub">${totali
+          .map(t => `${num(t.commissioniPercentuale)}% del volume in ${esc(t.valuta)}`).join(' · ')}</span></dd>
       </div>
       <div class="fig">
+        <dt>Eseguito a tariffa taker</dt>
+        <dd>${perValuta(totali, quotaTaker)}<span class="sub">del volume di Kraken Pro con il dato maker/taker</span></dd>
+      </div>
+      ${totali.some(t => t.volumeApp > 0) ? `<div class="fig">
+        <dt>Passato dall'app</dt>
+        <dd>${perValuta(totali.filter(t => t.volumeApp > 0), t => num(t.volumeApp))}<span class="sub">commissioni ${totali
+          .filter(t => t.volumeApp > 0).map(t => num(t.commissioniApp, 3) + ' ' + esc(t.valuta)).join(' · ')}, spread escluso</span></dd>
+      </div>` : ''}
+      <div class="fig">
         <dt>Commissioni di cambio</dt>
-        <dd>${num(s.fxFees, 3)}<span class="sub">${s.fxConversions} conversion${s.fxConversions === 1 ? 'e' : 'i'}</span></dd>
+        <dd>${perValuta(commissioniCambio, t => num(t.commissioni, 3))}<span class="sub">${conversioni(ordiniCambio)}${s.fxConversions > ordiniCambio ? `, in ${s.fxConversions} esecuzioni` : ''}</span></dd>
       </div>
       <div class="fig">
         <dt>Risultato realizzato</dt>
-        ${s.pairsWithIncompletePnl > 0 || s.realizedPnlComplete === null
-          ? `<dd class="muted">parziale<span class="sub">calcolabile su ${trading.length - s.pairsWithIncompletePnl} copp${trading.length - s.pairsWithIncompletePnl === 1 ? 'ia' : 'ie'} di ${trading.length}${s.realizedPnlComplete !== null ? `: ${num(s.realizedPnlComplete, 3)}` : ''}</span></dd>`
-          : `<dd class="${s.realizedPnlComplete >= 0 ? 'pos' : 'neg'}">${num(s.realizedPnlComplete, 3)}</dd>`}
+        ${totali.every(t => t.risultato === null || t.risultato === undefined)
+          ? `<dd class="muted">non calcolabile<span class="sub">nessuna vendita del periodo ha un costo di carico</span></dd>`
+          : `<dd${s.pairsWithIncompletePnl > 0 ? ' class="muted"' : ''}>${perValuta(totali, t => t.risultato === null || t.risultato === undefined ? null : `<span class="${classeSegno(t.risultato)}">${segno(t.risultato)}</span>`)}${s.pairsWithIncompletePnl > 0
+              ? `<span class="sub">parziale: ${s.pairsWithIncompletePnl} copp${s.pairsWithIncompletePnl === 1 ? 'ia ha' : 'ie hanno'} vendite senza costo di carico</span>`
+              : ''}</dd>`}
       </div>
     </dl>
   </section>
@@ -320,19 +383,20 @@ function render(j) {
     ${pairs.slice().sort((a, b) => feePct(b) - feePct(a)).map(p => {
       const pct = feePct(p);
       return `<div class="cost-row">
-        <div class="cost-name">${esc(p.displayName)}${p.fxConversion ? '<span class="tag">cambio</span>' : ''}</div>
+        <div class="cost-name">${esc(p.displayName)}${p.fxConversion ? '<span class="tag">cambio</span>' : ''}${p.operazioniDaApp > 0 ? '<span class="tag">app</span>' : ''}</div>
         <div class="cost-track">
           <div class="cost-fill${p.fxConversion ? ' fx' : ''}" style="width:${(pct / maxPct) * 100}%"></div>
-          <div class="tick" style="left:${(0.40 / maxPct) * 100}%"></div>
-          <div class="tick" style="left:${(0.80 / maxPct) * 100}%"></div>
+          <div class="tick" style="left:${(tariffe.LIMITE / maxPct) * 100}%"></div>
+          <div class="tick" style="left:${(tariffe.MERCATO / maxPct) * 100}%"></div>
         </div>
-        <div class="cost-pct">${pct.toFixed(2)}%</div>
+        <div class="cost-pct">${num(pct)}%</div>
       </div>`;
     }).join('')}
     <p class="tier-key">
-      Le due tacche sono le tue aliquote Kraken: 0,40% con ordine limite,
-      0,80% a mercato. Una barra vicina alla tacca destra è un ordine che ha
-      pagato il doppio del necessario.
+      Le due tacche sono le tue aliquote Kraken Pro: ${num(tariffe.LIMITE)}% con ordine limite,
+      ${num(tariffe.MERCATO)}% a mercato. Una barra vicina alla tacca destra è un ordine che ha
+      pagato il doppio del necessario. Le operazioni fatte dall'app hanno una
+      commissione loro, e uno spread che non compare qui perché sta nel prezzo.
     </p>
   </section>` : ''}
 
@@ -341,28 +405,73 @@ function render(j) {
     <p class="eyebrow">Dettaglio per coppia</p>
     <div class="scroller"><table>
       <thead><tr>
-        <th>Coppia</th><th>Op.</th><th>Acq.</th><th>Vend.</th>
+        <th>Coppia</th><th>Ordini</th><th>Acq.</th><th>Vend.</th>
         <th>Volume</th><th>Commissioni</th><th>Risultato</th><th>Posizione aperta</th>
       </tr></thead>
       <tbody>${trading.map(p => `<tr>
-        <td>${esc(p.displayName)}</td>
-        <td>${p.tradeCount}</td>
+        <td>${esc(p.displayName)}${p.operazioniDaApp > 0 ? '<span class="tag">app</span>' : ''}</td>
+        <td title="${p.tradeCount} esecuzion${p.tradeCount === 1 ? 'e' : 'i'}">${p.ordini}</td>
         <td>${p.buyCount}</td>
         <td>${p.sellCount}</td>
         <td>${num(p.volumeQuote)} <span style="color:var(--ink-soft)">${esc(p.quoteCurrency)}</span></td>
         <td>${num(p.feesPaid, 3)}</td>
-        <td>${!p.pnlComplete
-              ? `<span class="na" title="Venduto ${num(p.unmatchedSellVolume, 4)} senza acquisto corrispondente nel periodo">non calcolabile</span>`
+        <td>${!p.pnlComplete && (p.realizedPnl === null || p.realizedPnl === undefined)
+              ? `<span class="na" title="${esc(motivoIncompleto(p))}">non calcolabile</span>`
+              : !p.pnlComplete
+                ? `<span class="${classeSegno(p.realizedPnl)}">${num(p.realizedPnl, 3)}</span><span class="tag" title="${esc(motivoIncompleto(p))}">parziale</span>${tagCambio(p)}`
               : p.sellCount === 0
                 ? `<span style="color:var(--ink-soft)" title="Comprato e non ancora venduto: non c'è un risultato da realizzare">non realizzato</span>`
-                : `<span class="${p.realizedPnl >= 0 ? 'pos' : 'neg'}">${num(p.realizedPnl, 3)}</span>`}</td>
+                : `<span class="${classeSegno(p.realizedPnl)}">${num(p.realizedPnl, 3)}</span>${tagCambio(p)}`}</td>
         <td>${p.openPosition > 0 ? num(p.openPosition, 4) : '—'}</td>
       </tr>`).join('')}</tbody>
     </table></div>
     ${fx.length ? `<p class="tier-key">
       ${fx.length === 1 ? 'Esclusa' : 'Escluse'} da questa tabella:
-      ${fx.map(p => esc(p.displayName)).join(', ')} — ${s.fxConversions} conversion${s.fxConversions === 1 ? 'e' : 'i'} valutari${s.fxConversions === 1 ? 'a' : 'e'}.
+      ${fx.map(p => esc(p.displayName)).join(', ')} — ${conversioni(ordiniCambio)}.
     </p>` : ''}
+  </section>` : ''}
+
+  ${chiuse.length ? `
+  <section class="fade">
+    <p class="eyebrow">Operazioni chiuse nel periodo</p>
+    <div class="scroller"><table>
+      <thead><tr>
+        <th>Coppia</th><th>Aperta</th><th>Chiusa</th><th>Giorni</th><th>Investito</th><th>Risultato</th>
+      </tr></thead>
+      <tbody>${chiuse.map(o => `<tr>
+        <td>${esc(o.coppia)}</td>
+        <td>${data(o.apertura)}</td>
+        <td>${data(o.chiusura)}</td>
+        <td>${o.giorni}</td>
+        <td>${num(o.investito)} <span style="color:var(--ink-soft)">${esc(o.valuta)}</span></td>
+        <td>${o.risultato === null || o.risultato === undefined
+              ? `<span class="na" title="Una parte è stata comprata o venduta in un'altra valuta">non calcolabile</span>`
+              : `<span class="${classeSegno(o.risultato)}">${segno(o.risultato)}</span>`}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+    <p class="tier-key">
+      Un'operazione va dalla prima entrata su una moneta a quando ne resta solo
+      polvere, anche se è fatta di più acquisti e più vendite.
+    </p>
+  </section>` : ''}
+
+  ${aperte.length ? `
+  <section class="fade">
+    <p class="eyebrow">Posizioni aperte adesso</p>
+    <div class="scroller"><table>
+      <thead><tr>
+        <th>Coppia</th><th>Quantità</th><th>Costo di carico</th><th>Aperta dal</th>
+      </tr></thead>
+      <tbody>${aperte.map(a => `<tr>
+        <td>${esc(a.coppia)}</td>
+        <td>${num(a.quantita, 4)}</td>
+        <td>${num(a.costo)} <span style="color:var(--ink-soft)">${esc(a.valuta)}</span></td>
+        <td>${data(a.apertaDal)}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+    <p class="tier-key">
+      Il costo è quanto hai pagato, commissioni comprese: non è il valore di oggi.
+    </p>
   </section>` : ''}
 
   <section class="fade">
@@ -384,16 +493,19 @@ function render(j) {
 
   <footer>
     Le cifre sono calcolate dal codice a partire dallo storico Kraken. La lettura
-    testuale è generata da un modello a partire da quelle cifre: interpreta, non
-    ricalcola. Il risultato usa il costo medio ponderato, non il LIFO fiscale.
+    è scritta da regole fisse a partire da quelle cifre: stessi dati, stesso testo,
+    e nessun dato esce da questo computer. Il risultato usa il costo medio
+    ponderato, non il LIFO fiscale.
   </footer>`;
 }
 
 async function load(days) {
   out.innerHTML = `<div class="state">Carico il registro…</div>`;
   try {
-    const res = await fetch(`/api/journal?days=${days}`);
+    const [res, resTariffe] = await Promise.all([fetch(`/api/journal?days=${days}`), fetch('/api/tariffe')]);
     if (!res.ok) throw new Error(`Il server ha risposto ${res.status}. Controlla la console di IntelliJ.`);
+    if (!resTariffe.ok) throw new Error(`Tariffe non disponibili: il server ha risposto ${resTariffe.status}.`);
+    tariffe = await resTariffe.json();
     render(await res.json());
   } catch (e) {
     out.innerHTML = `<div class="state error">${esc(e.message)}</div>`;

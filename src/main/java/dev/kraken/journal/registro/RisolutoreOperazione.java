@@ -33,6 +33,9 @@ import dev.kraken.journal.scansione.TipoOrdine;
  * Se una candela apre gia' sotto lo stop, l'uscita e' l'apertura e non lo
  * stop: nel salto non c'e' nessun prezzo a cui lo stop si sarebbe riempito.
  * Sull'obiettivo il salto non si premia: si esce all'obiettivo.
+ *
+ * Stop e time stop escono a mercato; l'obiettivo, che e' un ordine in attesa,
+ * alla tariffa scelta per l'operazione.
  */
 public final class RisolutoreOperazione {
 
@@ -86,8 +89,11 @@ public final class RisolutoreOperazione {
 
     private static Chiusura chiusura(StatoOperazione stato, OperazioneRegistrata operazione,
                                      Instant quando, double prezzoUscita, TipoOrdine tipoOrdine) {
+        TipoOrdine uscita = stato == StatoOperazione.CHIUSA_ALL_OBIETTIVO
+                ? tipoOrdine
+                : MatematicaOperazione.USCITA_FORZATA;
         return new Chiusura(stato, quando, prezzoUscita,
                 MatematicaOperazione.risultatoInR(operazione.entrata(), operazione.stop(),
-                        prezzoUscita, tipoOrdine));
+                        prezzoUscita, tipoOrdine, uscita));
     }
 }

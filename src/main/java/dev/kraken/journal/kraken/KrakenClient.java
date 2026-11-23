@@ -9,6 +9,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,7 +21,9 @@ import org.springframework.web.client.RestClient;
 
 import dev.kraken.journal.config.KrakenProperties;
 import dev.kraken.journal.kraken.dto.KrakenEnvelope;
+import dev.kraken.journal.kraken.dto.KrakenLedgerEntry;
 import dev.kraken.journal.kraken.dto.KrakenTrade;
+import dev.kraken.journal.kraken.dto.LedgersResult;
 import dev.kraken.journal.kraken.dto.TradesHistoryResult;
 
 /**
@@ -32,12 +35,13 @@ public class KrakenClient {
 
     private static final Logger log = LoggerFactory.getLogger(KrakenClient.class);
     private static final String TRADES_HISTORY = "/0/private/TradesHistory";
-    /** Kraken restituisce al massimo 50 trade per pagina. */
+    private static final String LEDGERS = "/0/private/Ledgers";
+    /** Kraken restituisce al massimo 50 voci per pagina, trade o righe del ledger. */
     private static final int PAGE_SIZE = 50;
     private static final int MAX_PAGES = 40;
     /**
-     * TradesHistory costa due punti del contatore privato, che si scarica di
-     * un punto ogni due o tre secondi a seconda del livello del conto. Dopo
+     * TradesHistory e Ledgers costano due punti del contatore privato, che si
+     * scarica di un punto ogni due o tre secondi a seconda del livello del conto. Dopo
      * qualche pagina di fila il contatore e' pieno: la prima attesa deve gia'
      * bastare a recuperare almeno una chiamata.
      */
@@ -68,43 +72,72 @@ public class KrakenClient {
      * cronologicamente perche' il journal ragiona in avanti nel tempo.
      */
     public List<KrakenTrade> fetchTrades(Instant from, Instant to) {
-        List<KrakenTrade> collected = new ArrayList<>();
-        int offset = 0;
+        List<KrakenTrade> trade = new ArrayList<>(scaricaPagine(TRADES_HISTORY, Map.of("trades", "true"), from, to,
+                new ParameterizedTypeReference<KrakenEnvelope<TradesHistoryResult>>() {}, TradesHistoryResult::trades));
+        trade.sort(Comparator.comparing(KrakenTrade::timestamp));
+        log.info("Recuperati {} trade da Kraken tra {} e {}", trade.size(), from, to);
+        return trade;
+    }
+
+    /**
+     * Scarica le righe del ledger nell'intervallo indicato, paginando.
+     *
+     * Serve alla chiave il permesso "Query ledger entries", sempre di sola
+     * lettura. Senza, Kraken risponde con un errore e chi chiama decide come
+     * farne a meno.
+     */
+    public List<KrakenLedgerEntry> fetchLedger(Instant from, Instant to) {
+        List<KrakenLedgerEntry> righe = scaricaPagine(LEDGERS, Map.of(), from, to,
+                new ParameterizedTypeReference<KrakenEnvelope<LedgersResult>>() {}, LedgersResult::ledger);
+        log.info("Recuperate {} righe del ledger da Kraken tra {} e {}", righe.size(), from, to);
+        return righe;
+    }
+
+    /**
+     * La paginazione comune ai due storici: stessa dimensione di pagina, stesso
+     * scorrimento con "ofs", stessi ritentativi.
+     *
+     * Le voci si raccolgono per id: se fra una pagina e l'altra arriva
+     * un'operazione nuova tutto scorre di un posto, e la stessa voce tornerebbe
+     * due volte. Per il ledger Kraken preferisce ormai lo scorrimento a cursore;
+     * "ofs" resta valido ed e' quello gia' in uso per i trade.
+     */
+    private <R, T> List<T> scaricaPagine(String percorso, Map<String, String> filtri, Instant from, Instant to,
+                                         ParameterizedTypeReference<KrakenEnvelope<R>> tipo,
+                                         Function<R, Map<String, T>> voci) {
+        Map<String, T> raccolte = new LinkedHashMap<>();
         boolean completo = false;
 
-        for (int page = 0; page < MAX_PAGES; page++) {
+        for (int numero = 0, offset = 0; numero < MAX_PAGES; numero++) {
             Map<String, String> params = new LinkedHashMap<>();
             params.put("type", "all");
-            params.put("trades", "true");
+            params.putAll(filtri);
             params.put("start", String.valueOf(from.getEpochSecond()));
             params.put("end", String.valueOf(to.getEpochSecond()));
             params.put("ofs", String.valueOf(offset));
 
-            TradesHistoryResult result = Ritentativi.conRitentativi(TRADES_HISTORY, attesaLimite,
-                    () -> callPrivate(TRADES_HISTORY, params,
-                            new ParameterizedTypeReference<KrakenEnvelope<TradesHistoryResult>>() {}));
+            R risultato = Ritentativi.conRitentativi(percorso, attesaLimite,
+                    () -> callPrivate(percorso, params, tipo));
+            Map<String, T> pagina = risultato == null ? null : voci.apply(risultato);
 
-            if (result == null || result.trades() == null || result.trades().isEmpty()) {
+            if (pagina == null || pagina.isEmpty()) {
                 completo = true;
                 break;
             }
-            collected.addAll(result.trades().values());
+            raccolte.putAll(pagina);
 
-            if (collected.size() >= result.count() || result.trades().size() < PAGE_SIZE) {
+            if (pagina.size() < PAGE_SIZE) {
                 completo = true;
                 break;
             }
-            offset += result.trades().size();
+            offset += pagina.size();
         }
 
         if (!completo) {
-            log.warn("Raggiunto il tetto di {} pagine: il journal usa solo i {} trade piu' recenti del periodo",
-                    MAX_PAGES, collected.size());
+            log.warn("{}: raggiunto il tetto di {} pagine, il journal usa solo le {} voci piu' recenti",
+                    percorso, MAX_PAGES, raccolte.size());
         }
-
-        collected.sort(Comparator.comparing(KrakenTrade::timestamp));
-        log.info("Recuperati {} trade da Kraken tra {} e {}", collected.size(), from, to);
-        return collected;
+        return List.copyOf(raccolte.values());
     }
 
     private <T> T callPrivate(String path, Map<String, String> params,

@@ -1,216 +1,127 @@
 package dev.kraken.journal.journal;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClientException;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import dev.kraken.journal.ai.AnthropicClient;
-import dev.kraken.journal.journal.dto.AiView;
-import dev.kraken.journal.journal.dto.JournalReport;
 import dev.kraken.journal.journal.dto.JournalResponse;
 import dev.kraken.journal.journal.dto.JournalStats;
-import dev.kraken.journal.journal.dto.PairStats;
+import dev.kraken.journal.kraken.KrakenApiException;
 import dev.kraken.journal.kraken.KrakenClient;
-import dev.kraken.journal.kraken.dto.KrakenTrade;
+import dev.kraken.journal.kraken.dto.KrakenLedgerEntry;
+import dev.kraken.journal.mercato.Intervallo;
+import dev.kraken.journal.mercato.MercatoClient;
+import dev.kraken.journal.registro.ServizioRegistro;
 
+/**
+ * Storico da Kraken, metriche, commento.
+ *
+ * Il commento era scritto da Claude a ogni caricamento della pagina: costava,
+ * mandava fuori i dati aggregati, e non era ripetibile ne' testabile. Dal 23/11
+ * lo scrive {@link GeneratoreCommento} con regole fisse. La versione con il
+ * modello resta nella storia di git.
+ */
 @Service
 public class TradingJournalService {
 
     private static final Logger log = LoggerFactory.getLogger(TradingJournalService.class);
 
-    private static final DateTimeFormatter DAY =
-            DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.ITALIAN).withZone(ZoneOffset.UTC);
-
-    private static final String SYSTEM_PROMPT = """
-            Aiuti un trader retail a rileggere il proprio storico operazioni.
-
-            Ricevi metriche gia' calcolate da codice deterministico. Le interpreti,
-            non le ricalcoli.
-
-            COME SCRIVERE
-            - Scrivi in italiano corrente, per una persona, non per uno sviluppatore.
-            - Non citare MAI nomi di campi tecnici (niente pnlComplete, unmatchedSellVolume,
-              realizedPnl e simili). Se un concetto ti serve, dillo a parole: "costo di
-              acquisto sconosciuto", "posizione ancora aperta", "risultato non calcolabile".
-            - Cita i numeri, non i nomi dei campi. Arrotonda a cifre leggibili.
-            - Frasi brevi. Niente parentesi che spiegano il tuo stesso ragionamento.
-
-            COSA SIGNIFICANO I DATI
-            - statoDelRisultato "non calcolabile": quell'asset e' stato venduto senza che
-              nei dati ci sia l'acquisto corrispondente, quindi non si sa a che prezzo era
-              stato comprato. Non e' una perdita ne' un pareggio: e' un'informazione assente.
-            - statoDelRisultato "posizione aperta": comprato e non ancora venduto. Un
-              risultato di zero qui significa solo che non e' stato ancora realizzato.
-            - Le conversioni valutarie sono un blocco a parte: non sono trade.
-            - commissioniInPercentuale e' il costo effettivo su ogni coppia. Su Kraken
-              l'aliquota dipende dal tipo di ordine: piu' bassa con ordine limite, circa il
-              doppio con ordine a mercato. Se una coppia costa il doppio di un'altra, e'
-              un'informazione che vale la pena far notare.
-
-            REGOLE VINCOLANTI
-            - Usa solo i numeri forniti. Non stimarne altri.
-            - Nessuna previsione di prezzo. Nessun consiglio di comprare, vendere o tenere.
-            - Non presentare come comportamento di mercato cio' che dipende da dati mancanti.
-            - Se il campione e' troppo piccolo per concludere qualcosa, dillo e basta.
-            - Le osservazioni piu' utili riguardano cio' su cui la persona ha controllo:
-              i costi, la frequenza, la dimensione delle operazioni.
-
-            Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza testo prima o dopo,
-            senza backtick:
-            {
-              "summary": "2-4 frasi sul periodo",
-              "observedPatterns": ["osservazione con il numero che la sostiene"],
-              "questionsToAskYourself": ["domanda che il trader dovrebbe porsi"],
-              "dataCaveat": "limiti dei dati di questo periodo"
-            }
-            """;
-
     private final KrakenClient krakenClient;
+    private final StoriaOperazioni storiaOperazioni;
     private final TradeStatisticsCalculator calculator;
-    private final AnthropicClient anthropicClient;
-    private final ObjectMapper objectMapper;
+    private final GeneratoreCommento generatore;
+    private final ServizioRegistro registro;
+    private final MercatoClient mercato;
 
     public TradingJournalService(KrakenClient krakenClient,
+                                 StoriaOperazioni storiaOperazioni,
                                  TradeStatisticsCalculator calculator,
-                                 AnthropicClient anthropicClient,
-                                 ObjectMapper objectMapper) {
+                                 GeneratoreCommento generatore,
+                                 ServizioRegistro registro,
+                                 MercatoClient mercato) {
         this.krakenClient = krakenClient;
+        this.storiaOperazioni = storiaOperazioni;
         this.calculator = calculator;
-        this.anthropicClient = anthropicClient;
-        this.objectMapper = objectMapper;
+        this.generatore = generatore;
+        this.registro = registro;
+        this.mercato = mercato;
     }
 
+    /**
+     * Lo storico si scarica sempre per intero, dall'apertura del conto: il
+     * periodo scelto decide cosa riportare, non da dove ricostruire il costo
+     * di carico. Ogni pagina sono 50 voci e costa due punti del limite di
+     * Kraken: con poche decine di operazioni basta una pagina per fonte, con
+     * molte ricompense di staking il ledger ne chiede di piu'.
+     */
     public JournalResponse buildJournal(int lookbackDays) {
         Instant to = Instant.now();
         Instant from = to.minus(lookbackDays, ChronoUnit.DAYS);
 
-        List<KrakenTrade> trades = krakenClient.fetchTrades(from, to);
-        JournalStats stats = calculator.compute(trades, from, to);
-
-        if (trades.isEmpty()) {
-            return new JournalResponse(stats, new JournalReport(
-                    "Nessuna operazione negli ultimi %d giorni.".formatted(lookbackDays),
-                    List.of(), List.of(),
-                    "Nessun dato da analizzare nel periodo."));
-        }
-        return new JournalResponse(stats, analyse(stats));
-    }
-
-    /** Traduce le metriche in una vista comprensibile prima di darle al modello. */
-    private AiView toAiView(JournalStats s) {
-        List<AiView.Coppia> coppie = s.byPair().stream()
-                .filter(p -> !p.fxConversion())
-                .map(TradingJournalService::toCoppia)
-                .toList();
-
-        String notaRisultato = s.pairsWithIncompletePnl() > 0
-                ? "Il risultato complessivo copre solo le coppie con costo di acquisto noto: %d su %d."
-                    .formatted(coppie.size() - s.pairsWithIncompletePnl(), coppie.size())
-                : "Tutte le coppie hanno un costo di acquisto ricostruibile.";
-
-        String notaValute = s.mixedQuoteCurrencies()
-                ? "I totali sommano importi in valute diverse (%s): vanno letti come ordine di grandezza."
-                    .formatted(String.join(" e ", s.quoteCurrencies()))
-                : "Tutti gli importi sono nella stessa valuta.";
-
-        java.math.BigDecimal fxPercent = s.byPair().stream()
-                .filter(PairStats::fxConversion)
-                .map(PairStats::feesToVolumePercent)
-                .filter(v -> v != null)
-                .findFirst().orElse(null);
-
-        return new AiView(
-                DAY.format(s.periodStart()) + " - " + DAY.format(s.periodEnd()),
-                s.tradingDays(),
-                s.tradingTrades(),
-                s.tradesPerActiveDay(),
-                s.tradingVolumeQuote(),
-                s.tradingFees(),
-                s.feesToVolumePercent(),
-                s.realizedPnlComplete(),
-                notaRisultato,
-                new AiView.Cambi(s.fxConversions(), s.fxFees(), fxPercent),
-                notaValute,
-                coppie);
-    }
-
-    private static AiView.Coppia toCoppia(PairStats p) {
-        String stato;
-        if (!p.pnlComplete()) {
-            stato = "non calcolabile: venduto senza acquisto corrispondente nei dati";
-        } else if (p.sellCount() == 0) {
-            stato = "posizione aperta: comprato e non ancora venduto";
-        } else {
-            stato = "calcolato";
-        }
-        return new AiView.Coppia(
-                p.displayName(), p.tradeCount(), p.buyCount(), p.sellCount(),
-                p.volumeQuote(), p.quoteCurrency(),
-                p.feesPaid(), p.feesToVolumePercent(),
-                p.pnlComplete() && p.sellCount() > 0 ? p.realizedPnl() : null,
-                stato,
-                p.openPosition());
+        Storia storia = storiaOperazioni.componi(krakenClient.fetchTrades(Instant.EPOCH, to), ledger(to));
+        JournalStats stats = calculator.compute(storia, cambi(storia), from, to);
+        return new JournalResponse(stats, generatore.genera(stats, lookbackDays, registro.reali()));
     }
 
     /**
-     * Se il modello non risponde (limite di frequenza, sovraccarico, timeout)
-     * il report si degrada invece di far fallire la richiesta: le metriche sono
-     * gia' calcolate e valide, e perderle per colpa della parte opzionale
-     * sarebbe buttare via la parte che conta.
+     * Il ledger serve a leggere le operazioni fatte dall'app, ma richiede alla
+     * chiave un permesso in piu'. Senza quel permesso il journal funziona lo
+     * stesso con i soli trade, e lo dichiara in {@code ledgerLetto}: un errore
+     * qui non deve far sparire le metriche che si possono calcolare.
      */
-    private JournalReport analyse(JournalStats stats) {
+    private List<KrakenLedgerEntry> ledger(Instant to) {
         try {
-            String payload = objectMapper.writerWithDefaultPrettyPrinter()
-                    .writeValueAsString(toAiView(stats));
-
-            String userPrompt = """
-                    Dati del periodo:
-
-                    %s
-
-                    Analizza il comportamento operativo del periodo.
-                    """.formatted(payload);
-
-            return parse(anthropicClient.complete(SYSTEM_PROMPT, userPrompt));
-
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Impossibile serializzare le metriche", e);
-        } catch (RestClientException e) {
-            log.warn("Il modello non ha risposto, report degradato: {}", e.getMessage());
-            return degradato("Analisi non disponibile: il servizio del modello non ha risposto. Riprova piu' tardi.");
+            return krakenClient.fetchLedger(Instant.EPOCH, to);
+        } catch (KrakenApiException e) {
+            log.warn("Ledger non leggibile, il journal usa i soli trade di Kraken Pro: {}", e.getMessage());
+            return null;
         }
-    }
-
-    private static JournalReport degradato(String motivo) {
-        return new JournalReport(motivo, List.of(), List.of(), "Le metriche restano valide e verificabili.");
     }
 
     /**
-     * Il modello puo' incorniciare il JSON in un blocco markdown nonostante le
-     * istruzioni. Se il parsing fallisce restituisco un report degradato invece
-     * di far saltare la richiesta: le metriche restano valide.
+     * I cambi fra le valute delle operazioni, solo se ce n'e' piu' d'una.
+     * Kraken quota ogni cambio in un verso solo (EURUSD, non USDEUR): si
+     * prova un verso e poi l'altro. Le candele giornaliere arrivano al massimo
+     * a 720 giorni fa: una vendita piu' vecchia resta senza cambio, come una
+     * chiamata che non risponde. Il journal non si ferma per questo.
      */
-    private JournalReport parse(String raw) {
-        String cleaned = raw == null ? "" : raw.trim();
-        if (cleaned.startsWith("```")) {
-            cleaned = cleaned.replaceAll("^```(?:json)?\\s*", "").replaceAll("\\s*```$", "").trim();
+    private Cambi cambi(Storia storia) {
+        List<String> valute = storia.movimenti().stream().filter(m -> !m.coppia().fxConversion())
+                .map(m -> m.coppia().quote()).distinct().sorted().toList();
+        Map<String, NavigableMap<LocalDate, BigDecimal>> perCoppia = new HashMap<>();
+        for (String da : valute) {
+            for (String a : valute.subList(valute.indexOf(da) + 1, valute.size())) {
+                if (!scaricaCambio(da + a, perCoppia) && !scaricaCambio(a + da, perCoppia)) {
+                    log.warn("Nessun cambio {}/{}: le vendite fra queste valute restano senza risultato", da, a);
+                }
+            }
         }
+        return new Cambi(perCoppia);
+    }
+
+    /** Il valore di ogni giorno e' il prezzo medio della candela, o la chiusura se quel giorno non ci sono scambi. */
+    private boolean scaricaCambio(String coppia, Map<String, NavigableMap<LocalDate, BigDecimal>> perCoppia) {
         try {
-            return objectMapper.readValue(cleaned, JournalReport.class);
-        } catch (JsonProcessingException e) {
-            log.warn("Il modello non ha restituito JSON valido, report degradato: {}", e.getOriginalMessage());
-            return degradato("Analisi non disponibile: risposta del modello non interpretabile.");
+            perCoppia.put(coppia, mercato.candeleChiuse(coppia, Intervallo.GIORNALIERO).stream().collect(Collectors.toMap(
+                    c -> LocalDate.ofInstant(c.istante(), ZoneOffset.UTC),
+                    c -> BigDecimal.valueOf(c.prezzoMedio() > 0 ? c.prezzoMedio() : c.chiusura()),
+                    (prima, dopo) -> dopo, TreeMap::new)));
+            return true;
+        } catch (RuntimeException e) {
+            log.debug("Cambio {} non disponibile: {}", coppia, e.getMessage());
+            return false;
         }
     }
 }

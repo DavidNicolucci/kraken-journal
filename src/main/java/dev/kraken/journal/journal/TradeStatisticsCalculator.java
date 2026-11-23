@@ -3,42 +3,70 @@ package dev.kraken.journal.journal;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneOffset;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import dev.kraken.journal.journal.dto.JournalStats;
+import dev.kraken.journal.journal.dto.OperazioneChiusa;
+import dev.kraken.journal.journal.dto.Ordine;
 import dev.kraken.journal.journal.dto.PairStats;
+import dev.kraken.journal.journal.dto.PosizioneAperta;
+import dev.kraken.journal.journal.dto.TotaliValuta;
 import dev.kraken.journal.kraken.PairResolver;
-import dev.kraken.journal.kraken.dto.KrakenTrade;
 
 /**
  * Calcolo deterministico delle metriche del journal.
  *
- * Tre scelte che vale la pena conoscere prima di leggere i numeri:
+ * Le scelte che vale la pena conoscere prima di leggere i numeri:
  *
  * 1. P&L a costo medio ponderato. NON e' il criterio fiscale italiano, che per
  *    le cripto indica il LIFO. Serve a capire come hai operato, non a compilare
  *    la dichiarazione.
  *
- * 2. Quando si vende senza un acquisto corrispondente nel periodo, il costo di
- *    carico e' ignoto e il P&L di quella coppia viene marcato non calcolabile
- *    (null) invece di essere approssimato. Una versione precedente sottraeva
- *    solo le commissioni, producendo un P&L che sembrava reale ed era invece
- *    un artefatto: quel numero portava a leggere "ho perso esattamente le fee",
- *    che non era mai stato vero.
+ * 2. Il costo di carico si ricostruisce su TUTTO lo storico, il periodo decide
+ *    solo cosa riportare. Prima si leggevano solo i trade del periodo, e ogni
+ *    posizione aperta prima dell'inizio della finestra diventava una vendita
+ *    "senza acquisto": con operazioni di 3-15 giorni, quasi una su due nella
+ *    vista a trenta giorni.
  *
- * 3. Le conversioni valutarie (EUR/USD) sono contate a parte. Non sono trade
+ * 3. Le posizioni si tengono per moneta, con un costo per ogni valuta. Una
+ *    vendita consuma prima il carico nella sua valuta. SOL comprato in USD e
+ *    venduto in EUR esce dal carico (altrimenti resterebbe aperto per sempre):
+ *    il suo costo si converte al cambio del giorno della vendita, e se il
+ *    cambio non c'e' quella parte resta senza risultato.
+ *
+ * 4. Una vendita senza acquisto corrispondente non annulla il risultato del
+ *    resto della coppia. Si dichiara la quantita' scoperta e il risultato
+ *    copre la parte abbinata. Una versione precedente sottraeva solo le
+ *    commissioni, producendo un P&L che sembrava reale ed era un artefatto;
+ *    quella successiva scartava tutta la coppia, perdendo giri completi veri.
+ *
+ * 5. Le conversioni valutarie (EUR/USD) sono contate a parte. Non sono trade
  *    e includerle gonfia frequenza e conteggi.
+ *
+ * 6. Si contano gli ordini, non le esecuzioni: un ordine limite riempito in
+ *    tre pezzi e' una decisione sola.
+ *
+ * 7. Una posizione e' chiusa quando ne resta meno di
+ *    {@code journal.residuo-trascurabile} per cento della quantita' massima
+ *    tenuta. Il resto e' polvere, non una posizione aperta.
  */
 @Component
 public class TradeStatisticsCalculator {
@@ -46,145 +74,404 @@ public class TradeStatisticsCalculator {
     private static final MathContext MC = new MathContext(16, RoundingMode.HALF_UP);
     private static final MathContext PRICE_MC = new MathContext(6, RoundingMode.HALF_UP);
     private static final int SCALE = 8;
+    private static final BigDecimal CENTO = BigDecimal.valueOf(100);
 
-    private final PairResolver pairResolver;
+    private final ProprietaJournal proprieta;
+    private final ZoneId fuso;
 
-    public TradeStatisticsCalculator(PairResolver pairResolver) {
-        this.pairResolver = pairResolver;
+    /**
+     * @param fuso quello del lavoro giornaliero: un'operazione a mezzanotte e
+     *        mezza di Roma e' di oggi, non di ieri come direbbe UTC.
+     */
+    public TradeStatisticsCalculator(ProprietaJournal proprieta, @Value("${giornaliero.fuso}") ZoneId fuso) {
+        this.proprieta = proprieta;
+        this.fuso = fuso;
     }
 
-    public JournalStats compute(List<KrakenTrade> trades, Instant from, Instant to) {
-        Map<String, List<KrakenTrade>> grouped = trades.stream()
-                .collect(Collectors.groupingBy(KrakenTrade::pair, LinkedHashMap::new, Collectors.toList()));
+    public JournalStats compute(Storia storia, Cambi cambi, Instant from, Instant to) {
+        Map<String, Moneta> monete = new TreeMap<>();
+        Map<String, Accumulo> coppie = new LinkedHashMap<>();
+        Map<String, List<Movimento>> ordini = new LinkedHashMap<>();
+        List<OperazioneChiusa> chiuse = new ArrayList<>();
+        Set<LocalDate> giorniAttivi = new HashSet<>();
 
-        List<PairStats> pairStats = new ArrayList<>();
-        for (var entry : grouped.entrySet()) {
-            pairStats.add(computePair(entry.getKey(), entry.getValue()));
-        }
-        pairStats.sort(Comparator.comparing(PairStats::volumeQuote).reversed());
-
-        List<PairStats> tradingOnly = pairStats.stream().filter(p -> !p.fxConversion()).toList();
-
-        int tradingTrades = tradingOnly.stream().mapToInt(PairStats::tradeCount).sum();
-        int fxConversions = pairStats.stream().filter(PairStats::fxConversion)
-                .mapToInt(PairStats::tradeCount).sum();
-
-        List<PairStats> fxOnly = pairStats.stream().filter(PairStats::fxConversion).toList();
-
-        BigDecimal tradingVolume = sum(tradingOnly, PairStats::volumeQuote);
-        BigDecimal tradingFees = sum(tradingOnly, PairStats::feesPaid);
-        BigDecimal fxFees = sum(fxOnly, PairStats::feesPaid);
-        BigDecimal totalFees = tradingFees.add(fxFees);
-
-        BigDecimal completePnl = tradingOnly.stream()
-                .filter(PairStats::pnlComplete)
-                .map(PairStats::realizedPnl)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        int incomplete = (int) tradingOnly.stream().filter(p -> !p.pnlComplete()).count();
-
-        // Solo i giorni con operativita' vera: le conversioni valutarie non
-        // sono giornate di trading.
-        Set<?> activeDays = trades.stream()
-                .filter(t -> !pairResolver.resolve(t.pair()).fxConversion())
-                .map(t -> t.timestamp().atZone(ZoneOffset.UTC).toLocalDate())
-                .collect(Collectors.toSet());
-
-        BigDecimal perDay = activeDays.isEmpty()
-                ? BigDecimal.ZERO
-                : BigDecimal.valueOf(tradingTrades)
-                    .divide(BigDecimal.valueOf(activeDays.size()), 2, RoundingMode.HALF_UP);
-
-        Set<String> quotes = pairStats.stream()
-                .map(PairStats::quoteCurrency)
-                .collect(Collectors.toCollection(TreeSet::new));
-
-        return new JournalStats(
-                from, to,
-                trades.size(),
-                tradingTrades,
-                fxConversions,
-                activeDays.size(),
-                perDay,
-                scaled(tradingVolume),
-                scaled(totalFees),
-                scaled(tradingFees),
-                scaled(fxFees),
-                percentOf(tradingFees, tradingVolume),
-                incomplete == tradingOnly.size() && incomplete > 0 ? null : scaled(completePnl),
-                incomplete,
-                quotes.size() > 1,
-                List.copyOf(quotes),
-                pairStats
-        );
-    }
-
-    private PairStats computePair(String rawPair, List<KrakenTrade> trades) {
-        PairResolver.Pair pair = pairResolver.resolve(rawPair);
-
-        BigDecimal position = BigDecimal.ZERO;   // quantita' a carico
-        BigDecimal costBasis = BigDecimal.ZERO;  // costo della posizione
-        BigDecimal realized = BigDecimal.ZERO;
-        BigDecimal unmatchedSells = BigDecimal.ZERO;
-        BigDecimal fees = BigDecimal.ZERO;
-        BigDecimal volume = BigDecimal.ZERO;
-
-        BigDecimal buyVol = BigDecimal.ZERO, buyValue = BigDecimal.ZERO;
-        BigDecimal sellVol = BigDecimal.ZERO, sellValue = BigDecimal.ZERO;
-        int buys = 0, sells = 0;
-
-        for (KrakenTrade t : trades) {
-            fees = fees.add(nz(t.fee()));
-            volume = volume.add(nz(t.cost()));
-
-            if (t.isBuy()) {
-                buys++;
-                buyVol = buyVol.add(nz(t.vol()));
-                buyValue = buyValue.add(nz(t.cost()));
-                position = position.add(nz(t.vol()));
-                costBasis = costBasis.add(nz(t.cost())).add(nz(t.fee()));
-            } else {
-                sells++;
-                BigDecimal soldQty = nz(t.vol());
-                sellVol = sellVol.add(soldQty);
-                sellValue = sellValue.add(nz(t.cost()));
-
-                BigDecimal matched = soldQty.min(position.max(BigDecimal.ZERO));
-
-                if (matched.signum() > 0) {
-                    BigDecimal avgCost = costBasis.divide(position, MC);
-                    BigDecimal costOfSold = avgCost.multiply(matched, MC);
-                    BigDecimal proceeds = nz(t.cost())
-                            .multiply(matched.divide(soldQty, MC), MC)
-                            .subtract(nz(t.fee()).multiply(matched.divide(soldQty, MC), MC));
-                    realized = realized.add(proceeds.subtract(costOfSold));
-                    position = position.subtract(matched);
-                    costBasis = costBasis.subtract(costOfSold);
+        for (Movimento m : storia.movimenti()) {
+            if (m.istante().isAfter(to)) {
+                break;
+            }
+            Vendita vendita = Vendita.NESSUNA;
+            if (!m.coppia().fxConversion()) {
+                Moneta moneta = monete.computeIfAbsent(m.coppia().base(), k -> new Moneta(cambi));
+                vendita = moneta.applica(m);
+                if (moneta.chiusaDa(m)) {
+                    if (!m.istante().isBefore(from)) {
+                        chiuse.add(moneta.giro.chiudi(m.istante()));
+                    }
+                    moneta.giro = null;
                 }
-                // La parte non coperta non produce P&L: il costo di carico e'
-                // ignoto. La registro per poterlo dichiarare esplicitamente.
-                unmatchedSells = unmatchedSells.add(soldQty.subtract(matched));
+            }
+            if (m.istante().isBefore(from)) {
+                continue;
+            }
+            String chiave = chiaveOrdine(m, ordini.size());
+            ordini.computeIfAbsent(chiave, k -> new ArrayList<>()).add(m);
+            coppie.computeIfAbsent(m.coppia().display(), k -> new Accumulo(m.coppia())).aggiungi(m, vendita, chiave);
+            if (!m.coppia().fxConversion()) {
+                giorniAttivi.add(m.istante().atZone(fuso).toLocalDate());
             }
         }
 
-        boolean pnlComplete = unmatchedSells.signum() == 0;
+        List<PairStats> pairStats = coppie.values().stream()
+                .map(a -> a.stats(monete.get(a.coppia.base()), storia.arrivi()))
+                .sorted(Comparator.comparing(PairStats::volumeQuote).reversed())
+                .toList();
+        List<Accumulo> trading = coppie.values().stream().filter(a -> !a.coppia.fxConversion()).toList();
+        List<PairStats> tradingStats = pairStats.stream().filter(p -> !p.fxConversion()).toList();
 
-        return new PairStats(
-                rawPair,
-                pair.display(),
-                pair.quote(),
-                pair.fxConversion(),
-                trades.size(), buys, sells,
+        int esecuzioniTrading = trading.stream().mapToInt(a -> a.esecuzioni).sum();
+        int ordiniTrading = trading.stream().mapToInt(a -> a.ordini.size()).sum();
+        BigDecimal volume = somma(trading, a -> a.volume);
+        BigDecimal commissioni = somma(trading, a -> a.commissioni);
+        BigDecimal commissioniCambio = somma(coppie.values().stream().filter(a -> a.coppia.fxConversion()).toList(),
+                a -> a.commissioni);
+
+        int incomplete = (int) tradingStats.stream().filter(p -> !p.pnlComplete()).count();
+        BigDecimal risultatoCompleto = tradingStats.stream().filter(PairStats::pnlComplete)
+                .map(PairStats::realizedPnl).reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        Set<String> valute = trading.stream().map(a -> a.coppia.quote()).collect(Collectors.toCollection(TreeSet::new));
+
+        return new JournalStats(
+                from, to,
+                coppie.values().stream().mapToInt(a -> a.esecuzioni).sum(),
+                esecuzioniTrading,
+                coppie.values().stream().filter(a -> a.coppia.fxConversion()).mapToInt(a -> a.esecuzioni).sum(),
+                giorniAttivi.size(),
+                giorniAttivi.isEmpty() ? BigDecimal.ZERO
+                        : BigDecimal.valueOf(ordiniTrading).divide(BigDecimal.valueOf(giorniAttivi.size()), 2,
+                                RoundingMode.HALF_UP),
                 scaled(volume),
-                scaled(fees),
-                percentOf(fees, volume),
-                pnlComplete ? scaled(realized) : null,
-                pnlComplete,
-                scaled(unmatchedSells),
-                price(buyValue, buyVol),
-                price(sellValue, sellVol),
-                scaled(position)
-        );
+                scaled(commissioni.add(commissioniCambio)),
+                scaled(commissioni),
+                scaled(commissioniCambio),
+                percentOf(commissioni, volume),
+                incomplete == tradingStats.size() && incomplete > 0 ? null : scaled(risultatoCompleto),
+                incomplete,
+                valute.size() > 1,
+                List.copyOf(valute),
+                pairStats,
+                storia.ledgerLetto(),
+                ordini.values().stream().map(TradeStatisticsCalculator::ordine).toList(),
+                valute.stream().map(v -> totali(v, trading.stream().filter(a -> a.coppia.quote().equals(v)).toList()))
+                        .toList(),
+                List.copyOf(chiuse),
+                posizioniAperte(monete));
+    }
+
+    /** Senza un id si considera ogni esecuzione un ordine a se': meglio contarne troppi che fonderne due diversi. */
+    private static String chiaveOrdine(Movimento m, int progressivo) {
+        return m.idOrdine() == null || m.idOrdine().isBlank()
+                ? "#" + progressivo
+                : m.idOrdine() + "|" + m.coppia().display() + "|" + m.acquisto();
+    }
+
+    private static Ordine ordine(List<Movimento> esecuzioni) {
+        Movimento prima = esecuzioni.get(0);
+        boolean qualcunaTaker = esecuzioni.stream().anyMatch(e -> Boolean.FALSE.equals(e.maker()));
+        boolean tutteNote = esecuzioni.stream().allMatch(e -> e.maker() != null);
+        return new Ordine(
+                prima.idOrdine(),
+                prima.istante(),
+                prima.coppia().display(),
+                prima.coppia().base(),
+                prima.coppia().quote(),
+                prima.acquisto(),
+                prima.coppia().fxConversion(),
+                prima.origine(),
+                qualcunaTaker ? Boolean.TRUE : tutteNote ? Boolean.FALSE : null,
+                esecuzioni.size(),
+                scaled(somma(esecuzioni, Movimento::quantita)),
+                scaled(somma(esecuzioni, Movimento::controvalore)),
+                scaled(somma(esecuzioni, Movimento::commissione)));
+    }
+
+    private static TotaliValuta totali(String valuta, List<Accumulo> coppie) {
+        BigDecimal volume = somma(coppie, a -> a.volume);
+        BigDecimal commissioni = somma(coppie, a -> a.commissioni);
+        List<Accumulo> conRisultato = coppie.stream().filter(a -> a.abbinata.signum() > 0).toList();
+        return new TotaliValuta(
+                valuta,
+                coppie.stream().mapToInt(a -> a.ordini.size()).sum(),
+                scaled(volume),
+                scaled(commissioni),
+                percentOf(commissioni, volume),
+                scaled(somma(coppie, a -> a.volumeMaker)),
+                scaled(somma(coppie, a -> a.volumeTaker)),
+                scaled(somma(coppie, a -> a.commissioniTaker)),
+                scaled(somma(coppie, a -> a.volumeApp)),
+                scaled(somma(coppie, a -> a.commissioniApp)),
+                conRisultato.isEmpty() ? null : scaled(somma(conRisultato, a -> a.realizzato)),
+                (int) coppie.stream().filter(a -> !a.completa()).count());
+    }
+
+    private List<PosizioneAperta> posizioniAperte(Map<String, Moneta> monete) {
+        List<PosizioneAperta> aperte = new ArrayList<>();
+        monete.forEach((codice, moneta) -> {
+            if (moneta.giro != null) {
+                moneta.carichi.forEach((valuta, carico) -> {
+                    if (carico.quantita.signum() > 0) {
+                        aperte.add(new PosizioneAperta(codice + "/" + valuta, codice, valuta,
+                                scaled(carico.quantita), scaled(carico.costo), moneta.giro.apertura));
+                    }
+                });
+            }
+        });
+        return List.copyOf(aperte);
+    }
+
+    /** Quantita' e costo di carico di una moneta in una valuta. */
+    private static final class Carico {
+        BigDecimal quantita = BigDecimal.ZERO;
+        BigDecimal costo = BigDecimal.ZERO;
+
+        /** Toglie una quantita' al suo costo medio e restituisce quel costo. */
+        BigDecimal togli(BigDecimal parte) {
+            BigDecimal costoTolto = costo.multiply(parte, MC).divide(quantita, MC);
+            quantita = quantita.subtract(parte);
+            costo = costo.subtract(costoTolto);
+            if (quantita.signum() <= 0) {
+                quantita = BigDecimal.ZERO;
+                costo = BigDecimal.ZERO;
+            }
+            return costoTolto;
+        }
+    }
+
+    /**
+     * Quello che una vendita ha prodotto.
+     *
+     * @param realizzato risultato della parte abbinata, null se non ce n'e'.
+     * @param abbinata venduta a fronte di un acquisto, nella stessa valuta o
+     *        convertito: e' la parte con un risultato.
+     * @param convertita la parte di {@code abbinata} comprata in un'altra
+     *        valuta, con il costo convertito al cambio del giorno.
+     * @param altraValuta venduta a fronte di un acquisto in un'altra valuta,
+     *        senza un cambio per quel giorno.
+     * @param scoperta venduta senza nessun acquisto nello storico.
+     */
+    private record Vendita(BigDecimal realizzato, BigDecimal abbinata, BigDecimal convertita,
+                           BigDecimal altraValuta, BigDecimal scoperta) {
+        static final Vendita NESSUNA =
+                new Vendita(null, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+    }
+
+    /**
+     * Un giro completo in corso su una moneta: dalla prima entrata fino a che
+     * ne resta solo polvere. Investito e risultato sono nella valuta del primo
+     * acquisto: quello che passa per un'altra valuta si converte al cambio del
+     * giorno.
+     */
+    private static final class Giro {
+        final Instant apertura;
+        final String coppia;
+        final String valuta;
+        BigDecimal investito = BigDecimal.ZERO;
+        /** Null appena entra un'altra valuta senza un cambio: i due risultati non si sommano. */
+        BigDecimal risultato = BigDecimal.ZERO;
+        BigDecimal massimo = BigDecimal.ZERO;
+
+        Giro(Instant apertura, PairResolver.Pair coppia) {
+            this.apertura = apertura;
+            this.coppia = coppia.display();
+            this.valuta = coppia.quote();
+        }
+
+        OperazioneChiusa chiudi(Instant chiusura) {
+            return new OperazioneChiusa(coppia, valuta, apertura, chiusura,
+                    Duration.between(apertura, chiusura).toDays(), scaled(investito), scaled(risultato));
+        }
+    }
+
+    /** Tutto quello che si sa di una moneta, su tutto lo storico. */
+    private final class Moneta {
+        final Map<String, Carico> carichi = new TreeMap<>();
+        final Cambi cambi;
+        Giro giro;
+
+        Moneta(Cambi cambi) {
+            this.cambi = cambi;
+        }
+
+        Vendita applica(Movimento m) {
+            String valuta = m.coppia().quote();
+            if (m.acquisto()) {
+                Carico carico = carichi.computeIfAbsent(valuta, k -> new Carico());
+                BigDecimal costo = m.controvalore().add(m.commissione());
+                carico.quantita = carico.quantita.add(m.quantita());
+                carico.costo = carico.costo.add(costo);
+                if (giro == null) {
+                    giro = new Giro(m.istante(), m.coppia());
+                }
+                Optional<BigDecimal> cambio = cambi.tasso(valuta, giro.valuta, m.istante());
+                if (cambio.isPresent()) {
+                    giro.investito = giro.investito.add(costo.multiply(cambio.get(), MC));
+                } else {
+                    giro.risultato = null;
+                }
+                giro.massimo = giro.massimo.max(totale());
+                return Vendita.NESSUNA;
+            }
+            Vendita vendita = vendi(m);
+            if (giro != null) {
+                Optional<BigDecimal> cambio = cambi.tasso(valuta, giro.valuta, m.istante());
+                if (vendita.altraValuta().signum() > 0 || cambio.isEmpty()) {
+                    giro.risultato = null;
+                } else if (giro.risultato != null && vendita.realizzato() != null) {
+                    giro.risultato = giro.risultato.add(vendita.realizzato().multiply(cambio.get(), MC));
+                }
+            }
+            return vendita;
+        }
+
+        /** Dopo una vendita: e' rimasta solo polvere? */
+        boolean chiusaDa(Movimento m) {
+            return !m.acquisto() && giro != null
+                    && totale().compareTo(giro.massimo.multiply(proprieta.residuoTrascurabile()).divide(CENTO, MC)) <= 0;
+        }
+
+        /**
+         * Prima il carico nella valuta della vendita, poi quello nelle altre:
+         * il loro costo si converte al cambio del giorno della vendita. Si usa
+         * lo stesso giorno per ricavo e costo, cosi' il risultato e' quello
+         * che avresti avuto riportando subito il ricavo nella valuta spesa.
+         */
+        private Vendita vendi(Movimento m) {
+            BigDecimal quantita = m.quantita();
+            if (quantita.signum() <= 0) {
+                return Vendita.NESSUNA;
+            }
+            String valuta = m.coppia().quote();
+            BigDecimal ricavo = m.controvalore().subtract(m.commissione());
+            Carico stessaValuta = carichi.get(valuta);
+            BigDecimal abbinata = stessaValuta == null ? BigDecimal.ZERO : quantita.min(stessaValuta.quantita);
+            BigDecimal realizzato = abbinata.signum() > 0
+                    ? parte(ricavo, abbinata, quantita).subtract(stessaValuta.togli(abbinata)) : null;
+            BigDecimal resto = quantita.subtract(abbinata);
+            BigDecimal convertita = BigDecimal.ZERO;
+            BigDecimal altraValuta = BigDecimal.ZERO;
+            for (var voce : carichi.entrySet()) {
+                if (resto.signum() <= 0) {
+                    break;
+                }
+                Carico carico = voce.getValue();
+                if (!voce.getKey().equals(valuta) && carico.quantita.signum() > 0) {
+                    BigDecimal presa = resto.min(carico.quantita);
+                    BigDecimal costo = carico.togli(presa);
+                    Optional<BigDecimal> cambio = cambi.tasso(voce.getKey(), valuta, m.istante());
+                    if (cambio.isPresent()) {
+                        BigDecimal risultato = parte(ricavo, presa, quantita).subtract(costo.multiply(cambio.get(), MC));
+                        realizzato = realizzato == null ? risultato : realizzato.add(risultato);
+                        convertita = convertita.add(presa);
+                    } else {
+                        altraValuta = altraValuta.add(presa);
+                    }
+                    resto = resto.subtract(presa);
+                }
+            }
+            return new Vendita(realizzato, abbinata.add(convertita), convertita, altraValuta, resto);
+        }
+
+        /** La quota del ricavo che spetta a una parte della quantita' venduta. */
+        private static BigDecimal parte(BigDecimal ricavo, BigDecimal parte, BigDecimal quantita) {
+            return ricavo.multiply(parte, MC).divide(quantita, MC);
+        }
+
+        private BigDecimal totale() {
+            return carichi.values().stream().map(c -> c.quantita).reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
+    }
+
+    /** I numeri di una coppia nel periodo. */
+    private static final class Accumulo {
+        final PairResolver.Pair coppia;
+        final Set<String> ordini = new HashSet<>();
+        int esecuzioni, acquisti, vendite, daApp;
+        BigDecimal volume = BigDecimal.ZERO, commissioni = BigDecimal.ZERO;
+        BigDecimal volumeMaker = BigDecimal.ZERO, volumeTaker = BigDecimal.ZERO, commissioniTaker = BigDecimal.ZERO;
+        BigDecimal volumeApp = BigDecimal.ZERO, commissioniApp = BigDecimal.ZERO;
+        BigDecimal quantitaComprata = BigDecimal.ZERO, valoreComprato = BigDecimal.ZERO;
+        BigDecimal quantitaVenduta = BigDecimal.ZERO, valoreVenduto = BigDecimal.ZERO;
+        BigDecimal realizzato = BigDecimal.ZERO, abbinata = BigDecimal.ZERO;
+        BigDecimal convertita = BigDecimal.ZERO, altraValuta = BigDecimal.ZERO, scoperta = BigDecimal.ZERO;
+
+        Accumulo(PairResolver.Pair coppia) {
+            this.coppia = coppia;
+        }
+
+        void aggiungi(Movimento m, Vendita vendita, String chiaveOrdine) {
+            esecuzioni++;
+            ordini.add(chiaveOrdine);
+            volume = volume.add(m.controvalore());
+            commissioni = commissioni.add(m.commissione());
+            if (m.origine() == Origine.APP) {
+                daApp++;
+                volumeApp = volumeApp.add(m.controvalore());
+                commissioniApp = commissioniApp.add(m.commissione());
+            } else if (Boolean.TRUE.equals(m.maker())) {
+                volumeMaker = volumeMaker.add(m.controvalore());
+            } else if (Boolean.FALSE.equals(m.maker())) {
+                volumeTaker = volumeTaker.add(m.controvalore());
+                commissioniTaker = commissioniTaker.add(m.commissione());
+            }
+            if (m.acquisto()) {
+                acquisti++;
+                quantitaComprata = quantitaComprata.add(m.quantita());
+                valoreComprato = valoreComprato.add(m.controvalore());
+                return;
+            }
+            vendite++;
+            quantitaVenduta = quantitaVenduta.add(m.quantita());
+            valoreVenduto = valoreVenduto.add(m.controvalore());
+            if (vendita.realizzato() != null) {
+                realizzato = realizzato.add(vendita.realizzato());
+            }
+            abbinata = abbinata.add(vendita.abbinata());
+            convertita = convertita.add(vendita.convertita());
+            altraValuta = altraValuta.add(vendita.altraValuta());
+            scoperta = scoperta.add(vendita.scoperta());
+        }
+
+        /** Una conversione valutaria non ha un costo di carico: non e' mai "completa". */
+        boolean completa() {
+            return !coppia.fxConversion() && scoperta.signum() == 0 && altraValuta.signum() == 0;
+        }
+
+        PairStats stats(Moneta moneta, Map<String, Set<Provenienza>> arrivi) {
+            Carico carico = moneta == null || moneta.giro == null ? null : moneta.carichi.get(coppia.quote());
+            BigDecimal risultato = vendite == 0 ? BigDecimal.ZERO : abbinata.signum() > 0 ? realizzato : null;
+            return new PairStats(
+                    coppia.raw(),
+                    coppia.display(),
+                    coppia.quote(),
+                    coppia.fxConversion(),
+                    esecuzioni, acquisti, vendite,
+                    scaled(volume),
+                    scaled(commissioni),
+                    percentOf(commissioni, volume),
+                    scaled(risultato),
+                    completa(),
+                    scaled(scoperta),
+                    price(valoreComprato, quantitaComprata),
+                    price(valoreVenduto, quantitaVenduta),
+                    carico == null ? BigDecimal.ZERO : scaled(carico.quantita),
+                    ordini.size(),
+                    daApp,
+                    scaled(volumeTaker),
+                    scaled(altraValuta),
+                    scaled(convertita),
+                    carico == null ? BigDecimal.ZERO : scaled(carico.costo),
+                    scoperta.signum() > 0 ? Set.copyOf(arrivi.getOrDefault(coppia.base(), Set.of())) : Set.of());
+        }
     }
 
     /**
@@ -205,17 +492,12 @@ public class TradeStatisticsCalculator {
     private static BigDecimal percentOf(BigDecimal part, BigDecimal whole) {
         if (whole == null || whole.signum() == 0) return null;
         return part.divide(whole, 6, RoundingMode.HALF_UP)
-                   .multiply(BigDecimal.valueOf(100))
+                   .multiply(CENTO)
                    .setScale(2, RoundingMode.HALF_UP);
     }
 
-    private static BigDecimal sum(List<PairStats> stats,
-                                  java.util.function.Function<PairStats, BigDecimal> f) {
-        return stats.stream().map(f).filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-    }
-
-    private static BigDecimal nz(BigDecimal v) {
-        return v == null ? BigDecimal.ZERO : v;
+    private static <T> BigDecimal somma(List<T> voci, Function<T, BigDecimal> campo) {
+        return voci.stream().map(campo).filter(v -> v != null).reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private static BigDecimal scaled(BigDecimal v) {

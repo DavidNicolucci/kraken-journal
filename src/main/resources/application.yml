@@ -1,6 +1,6 @@
 # Solo da questo computer. Senza, Spring ascolta su tutte le interfacce e
-# chiunque sia sulla stessa rete puo' leggere lo storico dei trade, consumare
-# token Anthropic e scrivere nel registro: non c'e' autenticazione.
+# chiunque sia sulla stessa rete puo' leggere lo storico dei trade e scrivere
+# nel registro: non c'e' autenticazione.
 server:
   address: 127.0.0.1
 
@@ -14,6 +14,13 @@ spring:
     url: jdbc:h2:file:./dati/registro;DB_CLOSE_DELAY=-1
     username: sa
     password: ""
+  # Le pagine si ricontrollano a ogni apertura: senza, Chrome tiene in cache la
+  # versione vecchia di una pagina anche dopo un riavvio dell'app.
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          no-cache: true
   jpa:
     hibernate:
       # Va bene finche' il progetto e' personale. Il giorno in cui i dati
@@ -36,6 +43,14 @@ giornaliero:
   # Esplicito, altrimenti Spring userebbe il fuso di sistema e con l'ora legale
   # il lavoro si sposterebbe di un'ora due volte l'anno.
   fuso: Europe/Rome
+
+# Come il journal legge lo storico delle operazioni.
+journal:
+  # Sotto questa percentuale della quantita' massima tenuta, quello che resta
+  # dopo una vendita e' polvere e non una posizione aperta. Percentuale e non
+  # importo: un importo fisso vorrebbe dire una cosa in EUR e un'altra in USD.
+  # I residui di HYPE e PEPE nei dati di novembre 2026 erano intorno allo 0,8%.
+  residuo-trascurabile: 1
 
 # Le soglie della guida operativa. Cambiarle e' cambiare metodo:
 # farlo qui, tutto insieme, e non dentro un if.
@@ -76,12 +91,24 @@ scansione:
   # e ne costano tre. Le analisi su carta non hanno tetto.
   posizioni-massime: 2
   tipo-ordine: LIMITE
+  # Il trigger provvisorio (BREAKOUT_20_GIORNI): l'ultima candela chiusa
+  # chiude sopra il massimo dei giorni precedenti, con un controvalore almeno
+  # pari a questo multiplo della loro media. Senza questo controllo il registro
+  # chiamava "breakout" ogni coppia che passava i filtri.
+  giorni-breakout: 20
+  multiplo-volume-breakout: 1.5
 
-anthropic:
-  base-url: https://api.anthropic.com
-  api-key: ${ANTHROPIC_API_KEY}
-  model: claude-sonnet-5
-  max-tokens: 4096
+# Soglie del commento del journal (docs/regole-commento-journal.md). Come per
+# la scansione: cambiarle e' cambiare il modo di leggere i dati.
+commento:
+  # Da qui gli acquisti si confrontano con il metodo: watchlist, registro,
+  # dimensione, time stop, posizioni massime, ordini al giorno. E' la data
+  # della watchlist in EUR.
+  metodo-dal: "2026-11-19"
+  quota-taker-massima: 50        # % del volume Pro eseguito a tariffa taker
+  concentrazione-massima: 50     # % del volume di una valuta su una sola coppia
+  ordini-al-giorno-massimi: 2    # una revisione al giorno: un'uscita e un'entrata
+  giorni-registrazione: 3        # quanto prima dell'acquisto puo' stare la registrazione
 
 logging:
   level:

@@ -2,31 +2,35 @@
 
 Strumenti personali per operare su Kraken con un metodo scritto e misurabile:
 
-- **Journal**: statistiche sulle operazioni reali, lette da Kraken e commentate da Claude.
+- **Journal**: statistiche sulle operazioni reali (Kraken Pro e app), lette da Kraken e commentate da regole fisse.
 - **Calcolatore**: quantita', pareggio e rapporto rischio/rendimento prima di entrare.
 - **Scansione**: controlla ogni giorno una watchlist fissa contro la checklist della guida.
 - **Registro**: tiene traccia delle operazioni (su carta o reali) e ne misura l'esito in R.
 - **Lavoro giornaliero**: alle 7:00 chiude le operazioni risolte e registra le nuove idonee.
 
-Tutti i numeri sono calcolati da codice deterministico. Il modello riceve solo
-i numeri gia' pronti del journal e li interpreta.
+Tutto e' calcolato e scritto da codice deterministico, commento compreso: dal
+computer non esce nessun dato, a parte le chiamate a Kraken.
 
 ## Principio di design
 
 ```
-Kraken TradesHistory  ->  TradeStatisticsCalculator  ->  Claude  ->  JournalReport
-   (dati grezzi)          (numeri, verificabili)        (lettura)
+Kraken TradesHistory + Ledgers  ->  StoriaOperazioni  ->  TradeStatisticsCalculator  ->  GeneratoreCommento  ->  JournalReport
+   (dati grezzi)                    (una storia sola)     (numeri, verificabili)        (regole scritte)
 ```
 
-Il modello **non calcola nulla**. Se sbaglia, sbaglia nell'interpretazione, e le
-metriche restano valide e controllabili a mano. Il system prompt gli vieta
-esplicitamente di fare previsioni di prezzo o dare indicazioni operative.
+Il commento applica le regole di `docs/regole-commento-journal.md`, ciascuna
+con il suo test: stessi dati, stesso testo. Non fa previsioni di prezzo e non
+da' indicazioni operative. Fino al 23/11/2026 lo scriveva Claude; quella
+versione e' nel tag `versione-con-ai`.
 
 ## Setup
 
 1. Su Kraken: Settings -> API -> Add key, con **solo** questi permessi:
    - Query Funds
    - Query Closed Orders & Trades
+   - Query Ledger Entries: serve a leggere gli acquisti fatti dall'app Kraken,
+     che non compaiono fra i trade. Senza, il journal funziona lo stesso ma
+     dichiara che quelle operazioni mancano.
 
    Lascia disabilitati *Create & Modify Orders* e **soprattutto** *Withdraw Funds*.
    Una chiave con permesso di prelievo che finisce in un log e' un conto svuotato.
@@ -36,7 +40,6 @@ esplicitamente di fare previsioni di prezzo o dare indicazioni operative.
 ```bash
 export KRAKEN_API_KEY="..."
 export KRAKEN_API_SECRET="..."     # la stringa Base64 fornita da Kraken
-export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
 3. Avvio e chiamata:
@@ -61,9 +64,25 @@ dal repository: contiene dati personali e sopravvive ai riavvii.
 
 ### Journal — `GET /api/journal?days=30`
 
-Scarica `TradesHistory` da Kraken (da 1 a 365 giorni), calcola le metriche con
-`TradeStatisticsCalculator` e chiede a Claude una lettura dei numeri. Vedi le
-sezioni piu' sotto per i limiti del P&L.
+Scarica da Kraken **tutto lo storico** del conto: `TradesHistory` per gli
+ordini di Kraken Pro e `Ledgers` per le operazioni fatte dall'app, che compaiono
+solo li' come righe `spend` e `receive`. `StoriaOperazioni` le mette in una
+storia sola, `TradeStatisticsCalculator` calcola le metriche e
+`GeneratoreCommento` le commenta con le regole scritte.
+
+Il periodo (`days`, da 1 a 365) decide cosa riportare, non da dove ricostruire
+il costo di carico: una vendita di oggi trova il suo acquisto anche se e' di
+mesi fa. Oltre alle metriche per coppia, la risposta contiene:
+
+- `ordini`: un ordine eseguito in piu' pezzi conta una volta;
+- `totaliPerValuta`: volume, commissioni, quota taker e risultato, esatti per
+  ogni valuta invece di sommare EUR e USD;
+- `operazioniChiuse`: i giri completi chiusi nel periodo, dalla prima entrata a
+  quando della moneta resta solo polvere;
+- `posizioniAperte`: quello che e' in carico adesso, con il suo costo;
+- `ledgerLetto`: `false` se la chiave non ha il permesso sul ledger.
+
+Vedi le sezioni piu' sotto per i limiti del P&L.
 
 ### Calcolatore — `POST /api/valutazione`
 
@@ -90,10 +109,11 @@ indicatori sulle candele giornaliere chiuse e applica i controlli, in ordine:
 |---|---|
 | `LIQUIDITA` | controvalore 24h sopra `volume-minimo` |
 | `TREND` | media mobile a 20 in salita e prezzo sopra la media |
+| `BREAKOUT` | il trigger: chiusura sopra il massimo dei `giorni-breakout` giorni prima, con controvalore almeno `multiplo-volume-breakout` volte la loro media |
 | `MOMENTO` | RSI a 14 fra `rsi-minimo` e `rsi-massimo` |
 | `DISTANZA_DALLA_MEDIA` | prezzo non oltre `distanza-massima-dalla-media` % dalla media |
 | `AMPIEZZA_STOP` | stop fra `ampiezza-stop-minima` e `ampiezza-stop-massima` % |
-| `RESISTENZA_INTERMEDIA` | il massimo a 30 giorni non sta fra entrata e obiettivo |
+| `RESISTENZA_INTERMEDIA` | il massimo dei 30 giorni prima della rottura non sta fra entrata e obiettivo |
 
 Per ogni coppia propone anche un piano:
 
@@ -112,7 +132,7 @@ di una lista corta.
 |---|---|---|
 | `POST` | `/api/registro` | registra un'operazione |
 | `GET` | `/api/registro` | elenca tutte le operazioni |
-| `GET` | `/api/registro/statistiche` | esiti, risultato medio in R, registrazioni mancanti |
+| `GET` | `/api/registro/statistiche` | esiti e, per ogni regola su carta e reale, risultato medio in R con margine d'errore |
 | `POST` | `/api/registro/risoluzione` | chiude le operazioni aperte leggendo le candele |
 
 Coppia, trigger (`BREAKOUT_20_GIORNI`, `PULLBACK_MEDIA`, `MANUALE`), entrata,
@@ -126,9 +146,13 @@ Se nella stessa candela vengono toccati sia lo stop sia l'obiettivo, vince
 e la lettura pessimistica impedisce al registro di autoassolversi.
 
 Il risultato e' espresso in R, dove 1 R e' la perdita reale allo stop,
-commissioni comprese. Sotto `registrazioni-per-giudizio` operazioni chiuse il
-risultato medio e' rumore, e le statistiche lo dichiarano. La soglia da battere
-non e' zero ma il costo delle commissioni, circa 0,12 R per operazione.
+commissioni comprese e con lo stop eseguito a mercato. Essendo gia' al netto
+delle commissioni, la soglia da battere e' zero. Le statistiche sono separate
+per regola e per carta/reale, e danno il margine d'errore al 95% sulla media:
+il vantaggio e' misurato solo quando media meno margine resta sopra zero. Con
+15 operazioni chiuse, un terzo all'obiettivo a 2 R, il margine e' di circa
+0,8 R: `registrazioni-per-giudizio` e' il minimo per cominciare a guardare,
+non per concludere.
 
 ### Lavoro giornaliero — ogni giorno alle 7:00 (Europe/Rome)
 
@@ -154,9 +178,9 @@ Le coppie gia' aperte non vengono registrate due volte.
 ## Configurazione del metodo
 
 Tutte le soglie stanno nella sezione `scansione:` di `application.yml`:
-watchlist, volume, RSI, ampiezza dello stop, multiplo dell'obiettivo, capitale,
+watchlist, volume, trigger di rottura, RSI, ampiezza dello stop, multiplo dell'obiettivo, capitale,
 rischio per operazione, time stop, numero massimo di posizioni reali e tipo di
-ordine (`LIMITE` 0,40% o `MERCATO` 0,80% per lato).
+ordine (`LIMITE` o `MERCATO`, con le tariffe scritte solo in `TipoOrdine`).
 
 Cambiare una soglia significa cambiare metodo. Va fatto li', tutto insieme, e
 non dentro il codice. Le formule di rischio e commissioni stanno solo in
@@ -183,12 +207,22 @@ italiano**, che per le cripto indica il LIFO. Questi numeri servono a capire com
 hai operato, non a compilare la dichiarazione: per quella serve un
 commercialista o un software fiscale.
 
-**Posizioni preesistenti.** Se detenevi un asset prima dell'inizio del periodo,
-il costo di carico e' ignoto e il P&L delle relative vendite risulta
-sovrastimato. Allarga la finestra (`days`) per ridurre l'effetto.
+**Monete senza un acquisto.** Lo storico e' completo, quindi un acquisto prima
+del periodo viene trovato. Restano senza costo di carico le monete arrivate da
+un altro wallet, da ricompense o da airdrop: per quelle il risultato e' "non
+calcolabile" e la coppia riporta la provenienza letta dal ledger. Un prelievo
+verso un altro wallet invece non toglie la moneta dal carico, che resta come
+posizione aperta.
+
+**Vendite in un'altra valuta.** SOL comprato in USD e venduto in EUR esce dal
+carico, e il suo costo si converte al cambio medio del giorno della vendita,
+preso dalle candele giornaliere pubbliche di Kraken (EURUSD). Le candele
+arrivano a 720 giorni fa: una vendita piu' vecchia, o fra due valute che Kraken
+non quota, resta senza risultato.
 
 **Rate limit.** Kraken usa un contatore a decadimento sugli endpoint privati.
-`TradesHistory` e' fra i piu' costosi: non chiamare l'endpoint in loop stretto.
+`TradesHistory` e `Ledgers` sono fra i piu' costosi, e il journal li chiede
+entrambi a ogni caricamento: non chiamare l'endpoint in loop stretto.
 Per uso schedulato, una volta al giorno e' piu' che sufficiente.
 
 **Kraken risponde HTTP 200 anche sugli errori applicativi**, che finiscono
@@ -201,11 +235,8 @@ Non piazza ordini: la chiave Kraken ha solo permessi di lettura. Non prevede
 prezzi. La scansione applica regole scritte e registra i setup su carta; decidere
 se aprire davvero resta una scelta manuale.
 
-I setup della scansione vengono da codice deterministico e testabile, mai dal
-modello. Claude si limita a commentare le statistiche del journal.
-
-Un LLM non ha capacita' predittiva sui mercati: produce testo plausibile, non
-stime probabilistiche calibrate, e non e' backtestabile. Se in futuro vuoi
+I setup della scansione e il commento del journal vengono da codice
+deterministico e testabile. Se in futuro vuoi
 automatizzare l'esecuzione, la chiave con permesso di trading va introdotta solo dopo aver
 usato a lungo `validate=true` per il dry-run.
 
@@ -233,4 +264,37 @@ dal costo di carico.
 
 **Valute miste.** Quando le coppie hanno quote diverse (USD ed EUR), gli
 aggregati sommano importi in valute differenti. `mixedQuoteCurrencies` lo
-segnala: leggili come ordine di grandezza.
+segnala; i numeri esatti, per valuta, sono in `totaliPerValuta`.
+
+**Storico completo e acquisti dall'app.** Il costo di carico si ricostruiva
+sui soli trade del periodo, quindi ogni posizione aperta prima della finestra
+risultava venduta "senza acquisto". In piu' gli acquisti fatti dall'app non
+passano da `TradesHistory`: su un anno di dati il risultato era calcolabile
+su una sola vendita su 13. Ora lo storico si legge per intero, ledger compreso; le
+posizioni si tengono per moneta e la parte abbinata di una coppia conserva il
+suo risultato anche se un'altra parte non ce l'ha.
+
+**Ordini, giorni e polvere.** Gli ordini si contano una volta anche se eseguiti
+in piu' pezzi; i giorni attivi seguono il fuso del lavoro giornaliero
+(`giornaliero.fuso`) invece di UTC; un residuo sotto
+`journal.residuo-trascurabile` per cento non e' piu' una posizione aperta.
+
+**Stop a mercato.** Il rischio di un'operazione pagava lo stop alla tariffa
+dell'entrata, cioe' come ordine limite. Uno stop che scatta prende il prezzo
+che c'e': ora stop e time stop escono a tariffa taker (`MatematicaOperazione.USCITA_FORZATA`).
+La quantita' calcolata scende fra il 3 e il 6%, a seconda dell'ampiezza dello
+stop, e una R vale la perdita vera. Le
+operazioni chiuse prima del 23/11/2026 conservano il risultato in R calcolato
+allora.
+
+**Trigger verificato.** Il lavoro delle sette registrava come
+`BREAKOUT_20_GIORNI` ogni coppia che superava i filtri, senza controllare la
+rottura. Ora il controllo `BREAKOUT` fa parte della checklist, e il massimo a
+30 giorni della resistenza esclude la candela di rottura.
+
+**Tariffe da una fonte sola.** `GET /api/tariffe` espone `TipoOrdine`; il
+calcolatore e le tacche del journal le leggono da li'.
+
+**Commento senza AI.** `GeneratoreCommento` applica le regole scritte al posto
+del modello: gratis, offline, ripetibile e testabile. Le soglie sono nella
+sezione `commento:` di `application.yml`.

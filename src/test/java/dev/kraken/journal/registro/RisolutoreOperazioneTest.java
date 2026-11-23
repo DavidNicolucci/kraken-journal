@@ -69,6 +69,20 @@ class RisolutoreOperazioneTest {
         assertEquals(REGISTRAZIONE.plus(15, ChronoUnit.DAYS), chiusura.quando());
     }
 
+    /** Il time stop chiude alla chiusura della candela, con un ordine a mercato. */
+    @Test
+    void ilTimeStopEsceAMercato() {
+        List<Candela> giorniPiatti = new ArrayList<>();
+        for (int giorno = 1; giorno <= 20; giorno++) {
+            giorniPiatti.add(candela(giorno, 105, 99));
+        }
+        var chiusura = RisolutoreOperazione.risolvi(operazione(), giorniPiatti, TIME_STOP, TipoOrdine.LIMITE);
+
+        // Entrata 100 a limite, uscita 102 a mercato; una R e' 10 + 0,40 + 0,72.
+        double atteso = (102 - 100 - 0.40 - 102 * 0.008) / (10 + 0.40 + 0.72);
+        assertEquals(atteso, chiusura.risultatoInR(), 0.000001);
+    }
+
     @Test
     void restaApertaFinchePriceNonFaNiente() {
         assertNull(RisolutoreOperazione.risolvi(operazione(),

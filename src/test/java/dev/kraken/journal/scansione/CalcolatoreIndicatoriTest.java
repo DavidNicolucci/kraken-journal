@@ -55,15 +55,28 @@ class CalcolatoreIndicatoriTest {
 
     @Test
     void laMediaInSalitaSiLeggeDalConfrontoConLaCandelaPrecedente() {
-        var indicatori = CalcolatoreIndicatori.calcola(candeleCrescenti(80), 5);
+        var indicatori = CalcolatoreIndicatori.calcola(candeleCrescenti(80), 5, 20);
         assertTrue(indicatori.mediaMobileInSalita());
         assertTrue(indicatori.distanzaDallaMedia() > 0);
+    }
+
+    /**
+     * La candela di rottura e' fuori dal massimo da superare: altrimenti
+     * nessuna chiusura potrebbe mai stare sopra un massimo che la contiene.
+     */
+    @Test
+    void ilMassimoDaRompereEscludeLUltimaCandela() {
+        List<Candela> serie = candeleCrescenti(80);
+        var indicatori = CalcolatoreIndicatori.calcola(serie, 5, 20);
+        Candela penultima = serie.get(78);
+        assertEquals(penultima.massimo(), indicatori.massimoBreakout(), 0.000001);
+        assertEquals(penultima.massimo(), indicatori.massimo30Precedente(), 0.000001);
     }
 
     @Test
     void rifiutaUnaSerieTroppoCorta() {
         var errore = assertThrows(IllegalArgumentException.class,
-                () -> CalcolatoreIndicatori.calcola(candele(1, 2, 3), 5));
+                () -> CalcolatoreIndicatori.calcola(candele(1, 2, 3), 5, 20));
         assertTrue(errore.getMessage().contains("candele chiuse"));
     }
 

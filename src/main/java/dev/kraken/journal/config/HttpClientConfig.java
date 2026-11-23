@@ -8,10 +8,13 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
+import dev.kraken.journal.journal.ProprietaCommento;
+import dev.kraken.journal.journal.ProprietaJournal;
 import dev.kraken.journal.scansione.ProprietaScansione;
 
 @Configuration
-@EnableConfigurationProperties({KrakenProperties.class, AnthropicProperties.class, ProprietaScansione.class})
+@EnableConfigurationProperties({KrakenProperties.class, ProprietaScansione.class, ProprietaJournal.class,
+        ProprietaCommento.class})
 public class HttpClientConfig {
 
     private static SimpleClientHttpRequestFactory factory(Duration connect, Duration read) {
@@ -26,17 +29,6 @@ public class HttpClientConfig {
         return RestClient.builder()
                 .baseUrl(props.baseUrl())
                 .requestFactory(factory(Duration.ofSeconds(5), Duration.ofSeconds(20)))
-                .build();
-    }
-
-    @Bean
-    RestClient anthropicRestClient(AnthropicProperties props) {
-        return RestClient.builder()
-                .baseUrl(props.baseUrl())
-                .requestFactory(factory(Duration.ofSeconds(5), Duration.ofSeconds(120)))
-                .defaultHeader("x-api-key", props.apiKey())
-                .defaultHeader("anthropic-version", "2023-06-01")
-                .defaultHeader("content-type", "application/json")
                 .build();
     }
 }

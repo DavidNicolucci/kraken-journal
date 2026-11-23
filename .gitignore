@@ -5,6 +5,7 @@ build/
 *.war
 
 .idea/
+.openidea/
 *.iml
 .vscode/
 .settings/

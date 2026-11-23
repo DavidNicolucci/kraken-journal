@@ -38,6 +38,8 @@ tr.conMotivi td{border-bottom:0;padding-bottom:4px}
 .coppia{font-weight:600}
 .conteggio{font-weight:600}
 .conteggio.pieno{color:var(--gain)}
+td.gain{color:var(--gain)}
+td.cost{color:var(--cost)}
 .stato{font-size:11px;letter-spacing:.06em;text-transform:uppercase}
 .stato.perdita{color:var(--cost)}
 .stato.guadagno{color:var(--gain)}
@@ -68,6 +70,7 @@ tr.conMotivi td{border-bottom:0;padding-bottom:4px}
   <section>
     <p class="eyebrow">Dove sta il metodo</p>
     <div class="figures" id="statistiche"><div class="fig"><dt>&nbsp;</dt><dd>—</dd></div></div>
+    <div id="gruppiStatistiche"></div>
     <div id="avvisoStatistiche"></div>
   </section>
 
@@ -89,7 +92,7 @@ tr.conMotivi td{border-bottom:0;padding-bottom:4px}
     </table></div>
     <p class="nota" style="margin-top:18px">Nessuna riga di questa tabella dice di comprare.
       Dice quali condizioni sono vere e quali no, con accanto il numero che lo ha deciso.
-      Una coppia con sei controlli su sei non è un segnale di acquisto: è un setup che
+      Una coppia con tutti i controlli superati non è un segnale di acquisto: è un setup che
       rispetta le regole scritte nella guida.</p>
   </section>
 
@@ -134,7 +137,7 @@ const oraData = s => s ? new Date(s).toLocaleString('it-IT',{day:'2-digit',month
    nomi, la pagina li traduce. Aggiungere un valore lato server senza toccare
    questa mappa mostra il nome grezzo, che e' brutto ma non sbagliato. */
 const NOMI_CONTROLLI = {
-  LIQUIDITA:'liquidità', TREND:'trend', MOMENTO:'RSI',
+  LIQUIDITA:'liquidità', TREND:'trend', BREAKOUT:'rottura', MOMENTO:'RSI',
   DISTANZA_DALLA_MEDIA:'distanza dalla media', AMPIEZZA_STOP:'ampiezza stop',
   RESISTENZA_INTERMEDIA:'resistenza in mezzo'
 };
@@ -160,30 +163,49 @@ async function conBottone(bottone, testoAtteso, lavoro){
 }
 
 /* ---------- statistiche ---------- */
+/* I risultati arrivano per gruppo (regola e carta/reale): una media unica
+   mescolava ipotesi diverse e non diceva quale stesse funzionando. Una R e'
+   gia' al netto delle commissioni, quindi la soglia da battere e' zero. */
+const nomeGruppo = g => `${NOMI_TRIGGER[g.trigger] || esc(g.trigger)}, ${g.reale ? 'reale' : 'carta'}`;
+const conMargine = g => g.risultatoMedioInR === null || g.risultatoMedioInR === undefined
+  ? '—'
+  : fmt(g.risultatoMedioInR, 2) + (g.margineInR === null || g.margineInR === undefined ? '' : ' ± ' + fmt(g.margineInR, 2)) + ' R';
+
 async function caricaStatistiche(){
   try {
     const s = await chiedi('/api/registro/statistiche');
-    const mancano = s.registrazioniMancanti;
     $('statistiche').innerHTML = `
       <div class="fig"><dt>Posizioni vere aperte</dt>
         <dd>${s.posizioniRealiAperte} <span class="sub">tetto ${s.posizioniMassime}</span></dd></div>
       <div class="fig"><dt>Analisi aperte</dt>
         <dd>${s.aperte} <span class="sub">carta e reali insieme</span></dd></div>
       <div class="fig"><dt>Chiuse</dt>
-        <dd>${s.chiuse} <span class="sub">${s.allObiettivo} all'obiettivo, ${s.alloStop} allo stop, ${s.perTempo} per tempo</span></dd></div>
-      <div class="fig"><dt>Risultato medio</dt>
-        <dd class="${s.chiuse === 0 ? '' : (s.risultatoMedioInR > 0.12 ? 'gain' : 'cost')}">${s.chiuse ? fmt(s.risultatoMedioInR,3) : '—'} R
-          <span class="sub">soglia da battere 0,12 R</span></dd></div>
-      <div class="fig"><dt>Mancano al giudizio</dt>
-        <dd>${mancano} <span class="sub">registrazioni chiuse</span></dd></div>`;
-    $('avvisoStatistiche').innerHTML = mancano > 0
+        <dd>${s.chiuse} <span class="sub">${s.allObiettivo} all'obiettivo, ${s.alloStop} allo stop, ${s.perTempo} per tempo</span></dd></div>`;
+    const gruppi = s.gruppi || [];
+    $('gruppiStatistiche').innerHTML = gruppi.length ? `
+      <div class="scroller"><table>
+        <thead><tr><th>Regola</th><th>Aperte</th><th>Chiuse</th><th>All'obiettivo</th><th>Risultato medio</th><th>Mancano</th></tr></thead>
+        <tbody>${gruppi.map(g => `<tr>
+          <td>${nomeGruppo(g)}</td><td>${g.aperte}</td><td>${g.chiuse}</td>
+          <td>${g.chiuse ? fmt(g.percentualeAllObiettivo, 0) + '%' : '—'}</td>
+          <td class="${g.risultatoMedioInR > 0 ? 'gain' : g.risultatoMedioInR < 0 ? 'cost' : ''}">${conMargine(g)}</td>
+          <td>${g.registrazioniMancanti}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>` : '';
+    const giudicabili = gruppi.filter(g => g.registrazioniMancanti === 0 && g.margineInR !== null && g.margineInR !== undefined);
+    $('avvisoStatistiche').innerHTML = !giudicabili.length
       ? `<p class="flag warn"><b>Il risultato medio non significa ancora niente</b>
-         Mancano ${mancano} registrazioni chiuse. Sotto quella soglia il numero è rumore,
+         Nessuna regola ha abbastanza operazioni chiuse. Sotto quella soglia il numero è rumore,
          e leggerlo come un esito è il modo più rapido per convincersi di un vantaggio
          che non è stato misurato.</p>`
-      : `<p class="flag ok"><b>Il campione è abbastanza grande per essere guardato</b>
-         Ricorda cosa vuol dire: serve superare 0,12 R di media, che è quanto costano le
-         commissioni. Sotto quella soglia la regola perde anche facendo più verdi che rossi.</p>`;
+      : giudicabili.map(g => g.risultatoMedioInR - g.margineInR > 0
+          ? `<p class="flag ok"><b>${nomeGruppo(g)}: sopra zero anche nel caso peggiore</b>
+             Media ${conMargine(g)}: togliendo il margine resta positiva. Il risultato è già al
+             netto delle commissioni.</p>`
+          : `<p class="flag warn"><b>${nomeGruppo(g)}: il vantaggio non è dimostrato</b>
+             Media ${conMargine(g)}: lo zero sta dentro il margine. Il risultato è già al netto
+             delle commissioni, quindi non serve un'altra soglia: serve che media meno margine
+             resti sopra zero.</p>`).join('');
   } catch (e) {
     $('avvisoStatistiche').innerHTML = `<p class="flag"><b>Statistiche non disponibili</b>${esc(e.message)}</p>`;
   }

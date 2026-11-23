@@ -53,9 +53,6 @@ table{margin-top:4px}
 .sw.gain{background:rgba(44,107,80,.3)}
 
 /* ---------- risultati ---------- */
-.figures{display:grid;gap:1px;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));
-  background:var(--rule);border:1px solid var(--rule)}
-
 .verdict{font-family:var(--prose);font-size:19px;line-height:1.5;max-width:60ch;margin:0 0 22px}
 
 </style>
@@ -109,17 +106,11 @@ table{margin-top:4px}
       </div>
       <div class="field">
         <label for="feeIn">Commissione in entrata</label>
-        <select id="feeIn">
-          <option value="0.40">0,40% — ordine limite</option>
-          <option value="0.80" selected>0,80% — ordine a mercato</option>
-        </select>
+        <select id="feeIn"></select>
       </div>
       <div class="field">
         <label for="feeOut">Commissione in uscita</label>
-        <select id="feeOut">
-          <option value="0.40">0,40% — ordine limite</option>
-          <option value="0.80" selected>0,80% — ordine a mercato</option>
-        </select>
+        <select id="feeOut"></select>
       </div>
     </div>
   </section>
@@ -146,8 +137,9 @@ table{margin-top:4px}
   <footer>
     Aritmetica, non previsione. Questa pagina non sa dove andrà il prezzo e non
     esprime alcun giudizio sull'operazione: calcola solo cosa comporta, ai costi
-    che le indichi. Le aliquote 0,40% e 0,80% sono quelle del tuo livello Kraken
-    e cambiano al variare del volume mensile: verificale nella pagina commissioni.
+    che le indichi. Le aliquote sono quelle del tuo livello Kraken, scritte in un
+    posto solo sul server, e cambiano al variare del volume mensile: verificale
+    nella pagina commissioni.
     Non è consulenza finanziaria.
   </footer>
 
@@ -332,6 +324,20 @@ function mostra(v, e){
     </tbody>`;
 }
 
+/* Le tariffe arrivano dal server, da TipoOrdine: erano scritte qui, nel
+   journal e in Java, e al primo cambio di livello si sarebbero aggiornate in
+   un posto solo. Si parte da "a mercato" su entrambi i lati, il caso peggiore. */
+const NOMI_ORDINI = {LIMITE:'ordine limite', MERCATO:'ordine a mercato'};
+async function caricaTariffe(){
+  const risposta = await fetch('/api/tariffe');
+  if (!risposta.ok) throw new Error('il server ha risposto ' + risposta.status);
+  const tariffe = await risposta.json();
+  const opzioni = Object.entries(tariffe).map(([tipo, p]) =>
+    `<option value="${p}"${tipo === 'MERCATO' ? ' selected' : ''}>${pct(p)} — ${NOMI_ORDINI[tipo] || tipo}</option>`).join('');
+  $('feeIn').innerHTML = opzioni;
+  $('feeOut').innerHTML = opzioni;
+}
+
 ids.forEach(id => $(id).addEventListener('input', calcola));
 $('direzione').addEventListener('click', ev => {
   const b = ev.target.closest('button'); if (!b) return;
@@ -340,7 +346,9 @@ $('direzione').addEventListener('click', ev => {
   b.setAttribute('aria-pressed','true');
   calcola();
 });
-chiedi();
+caricaTariffe()
+  .then(chiedi)
+  .catch(e => svuota(`<p class="flag"><b>Tariffe non disponibili</b>${e.message}</p>`));
 </script>
 </body>
 </html>

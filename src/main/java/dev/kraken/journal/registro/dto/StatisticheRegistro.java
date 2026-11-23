@@ -1,15 +1,18 @@
 package dev.kraken.journal.registro.dto;
 
+import java.util.List;
+
+import dev.kraken.journal.registro.Trigger;
+
 /**
  * Come sta andando il registro.
  *
- * @param risultatoMedioInR il numero che conta davvero. La soglia da battere
- *        non e' zero ma il costo delle commissioni, misurato intorno a 0,12 R
- *        per operazione: sotto quel valore la regola sta perdendo anche quando
- *        i verdi sono piu' dei rossi.
- * @param registrazioniMancanti quante ne servono ancora prima di poter dire
- *        qualcosa. Finche' e' maggiore di zero, il risultato medio va letto
- *        come rumore.
+ * I risultati stanno solo nei gruppi, uno per regola e per tipo (carta o
+ * reale). Una media unica mescolava le analisi su carta con le operazioni
+ * vere e un trigger con l'altro: il numero non diceva quale ipotesi stesse
+ * funzionando, che e' il motivo per cui il registro esiste.
+ *
+ * @param aperte carta e reali insieme: serve solo a sapere quante ne restano.
  * @param posizioniRealiAperte contate a parte dalle analisi su carta: il tetto
  *        della regola 2.3 vale solo su queste. La carta non ha limite perche'
  *        non costa commissioni e non corre rischio.
@@ -20,10 +23,30 @@ public record StatisticheRegistro(
         long allObiettivo,
         long alloStop,
         long perTempo,
-        double percentualeAllObiettivo,
-        double risultatoMedioInR,
-        double risultatoTotaleInR,
-        long registrazioniMancanti,
         long posizioniRealiAperte,
-        int posizioniMassime) {
+        int posizioniMassime,
+        List<Gruppo> gruppi) {
+
+    /**
+     * I risultati di una regola, su carta o con soldi veri.
+     *
+     * @param risultatoMedioInR gia' al netto delle commissioni, perche' una R e'
+     *        la perdita allo stop commissioni comprese. La soglia da battere e'
+     *        quindi zero. Null se non ci sono operazioni chiuse.
+     * @param margineInR mezza ampiezza dell'intervallo al 95% sulla media. Il
+     *        vantaggio e' misurato solo se media meno margine resta sopra zero.
+     *        Null sotto le due operazioni chiuse.
+     * @param registrazioniMancanti quante operazioni chiuse servono ancora per
+     *        arrivare a {@code registrazioni-per-giudizio}.
+     */
+    public record Gruppo(
+            Trigger trigger,
+            boolean reale,
+            long aperte,
+            long chiuse,
+            double percentualeAllObiettivo,
+            Double risultatoMedioInR,
+            Double margineInR,
+            long registrazioniMancanti) {
+    }
 }

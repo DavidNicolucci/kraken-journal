@@ -94,7 +94,7 @@ public class ServizioScansione {
         }
         Indicatori indicatori = CalcolatoreIndicatori.calcola(
                 mercatoClient.candeleChiuse(coppia, Intervallo.GIORNALIERO),
-                proprieta.giorniMinimoStop());
+                proprieta.giorniMinimoStop(), proprieta.giorniBreakout());
         Piano piano = valutatore.valuta(quotazione.ultimo(), indicatori);
         return Candidato.di(coppia, quotazione, indicatori, piano, controlla(quotazione, indicatori, piano));
     }
@@ -109,6 +109,12 @@ public class ServizioScansione {
                         i.mediaMobileInSalita() && i.chiusura() > i.mediaMobile20(),
                         i.mediaMobileInSalita() ? "media in salita" : "media in discesa",
                         "media in salita e prezzo sopra"),
+                EsitoControllo.di(Controllo.BREAKOUT,
+                        i.chiusura() > i.massimoBreakout()
+                                && i.multiploVolume() >= proprieta.multiploVolumeBreakout(),
+                        "chiusura " + arrotonda(i.chiusura(), 4) + ", volume " + arrotonda(i.multiploVolume(), 1) + "x",
+                        "sopra " + arrotonda(i.massimoBreakout(), 4) + " con volume >= "
+                                + arrotonda(proprieta.multiploVolumeBreakout(), 1) + "x"),
                 EsitoControllo.di(Controllo.MOMENTO,
                         i.rsi14() >= proprieta.rsiMinimo() && i.rsi14() <= proprieta.rsiMassimo(),
                         arrotonda(i.rsi14(), 1),
@@ -128,8 +134,8 @@ public class ServizioScansione {
                         "tra " + arrotonda(proprieta.ampiezzaStopMinima(), 0) + "% e "
                                 + arrotonda(proprieta.ampiezzaStopMassima(), 0) + "%"),
                 EsitoControllo.di(Controllo.RESISTENZA_INTERMEDIA,
-                        i.massimo30() <= piano.entrata() || i.massimo30() >= piano.obiettivo(),
-                        "massimo 30g " + arrotonda(i.massimo30(), 4),
+                        i.massimo30Precedente() <= piano.entrata() || i.massimo30Precedente() >= piano.obiettivo(),
+                        "massimo 30g " + arrotonda(i.massimo30Precedente(), 4),
                         "fuori da " + arrotonda(piano.entrata(), 4) + " - " + arrotonda(piano.obiettivo(), 4)));
     }
 

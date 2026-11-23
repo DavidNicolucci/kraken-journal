@@ -41,4 +41,22 @@ class PairResolverTest {
     void bitcoinNonEUnaConversioneValutaria() {
         assertFalse(resolver.resolve("XXBTZUSD").fxConversion());
     }
+
+    /** Prima ogni codice di quattro lettere che iniziava per X o Z perdeva la prima lettera. */
+    @Test
+    void nonTagliaLeMoneteCheInizianoPerXOZ() {
+        assertEquals("ZETA", resolver.resolve("ZETAEUR").base());
+        assertEquals("XTZ", resolver.resolve("XTZEUR").base());
+        assertEquals("EUR", resolver.resolve("XTZEUR").quote());
+    }
+
+    /** Il ledger riporta i due codici separati, a volte con un suffisso di staking. */
+    @Test
+    void componeLaCoppiaDaiCodiciDelLedger() {
+        var p = resolver.coppia("XXBT", "ZEUR");
+        assertEquals("XBT/EUR", p.display());
+        assertFalse(p.fxConversion());
+        assertTrue(resolver.coppia("ZEUR", "ZUSD").fxConversion());
+        assertEquals("SOL", resolver.asset("SOL.F"));
+    }
 }

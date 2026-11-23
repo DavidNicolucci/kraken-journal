@@ -2,6 +2,9 @@ package dev.kraken.journal.registro;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -128,11 +131,19 @@ public class ServizioRegistro {
         return repository.findAllByOrderByDataRegistrazioneDesc();
     }
 
+    /** Le operazioni vere, per confrontarle con gli acquisti letti da Kraken. */
+    @Transactional(readOnly = true)
+    public List<OperazioneRegistrata> reali() {
+        return repository.findByReale(true);
+    }
+
     @Transactional(readOnly = true)
     public StatisticheRegistro statistiche() {
         List<OperazioneRegistrata> tutte = repository.findAll();
         List<OperazioneRegistrata> chiuse = tutte.stream().filter(o -> o.stato().chiusa()).toList();
-        double totale = chiuse.stream().mapToDouble(OperazioneRegistrata::risultatoInR).sum();
+
+        Map<ChiaveGruppo, List<OperazioneRegistrata>> perGruppo = tutte.stream().collect(Collectors.groupingBy(
+                o -> new ChiaveGruppo(o.trigger(), o.reale()), TreeMap::new, Collectors.toList()));
 
         return new StatisticheRegistro(
                 tutte.size() - chiuse.size(),
@@ -140,12 +151,32 @@ public class ServizioRegistro {
                 conta(chiuse, StatoOperazione.CHIUSA_ALL_OBIETTIVO),
                 conta(chiuse, StatoOperazione.CHIUSA_ALLO_STOP),
                 conta(chiuse, StatoOperazione.CHIUSA_PER_TEMPO),
-                chiuse.isEmpty() ? 0 : conta(chiuse, StatoOperazione.CHIUSA_ALL_OBIETTIVO) * 100.0 / chiuse.size(),
-                chiuse.isEmpty() ? 0 : totale / chiuse.size(),
-                totale,
-                Math.max(0, proprieta.registrazioniPerGiudizio() - chiuse.size()),
                 posizioniRealiAperte(),
-                proprieta.posizioniMassime());
+                proprieta.posizioniMassime(),
+                perGruppo.entrySet().stream().map(v -> gruppo(v.getKey(), v.getValue())).toList());
+    }
+
+    /** Prima le operazioni vere, poi la carta; dentro, nell'ordine dei trigger. */
+    private record ChiaveGruppo(Trigger trigger, boolean reale) implements Comparable<ChiaveGruppo> {
+        @Override
+        public int compareTo(ChiaveGruppo altro) {
+            return reale != altro.reale ? (reale ? -1 : 1) : trigger.compareTo(altro.trigger);
+        }
+    }
+
+    private StatisticheRegistro.Gruppo gruppo(ChiaveGruppo chiave, List<OperazioneRegistrata> operazioni) {
+        double[] risultati = operazioni.stream().filter(o -> o.stato().chiusa() && o.risultatoInR() != null)
+                .mapToDouble(OperazioneRegistrata::risultatoInR).toArray();
+        long chiuse = operazioni.stream().filter(o -> o.stato().chiusa()).count();
+        return new StatisticheRegistro.Gruppo(
+                chiave.trigger(),
+                chiave.reale(),
+                operazioni.size() - chiuse,
+                chiuse,
+                chiuse == 0 ? 0 : conta(operazioni, StatoOperazione.CHIUSA_ALL_OBIETTIVO) * 100.0 / chiuse,
+                risultati.length == 0 ? null : Statistica.media(risultati),
+                Statistica.margine95(risultati),
+                Math.max(0, proprieta.registrazioniPerGiudizio() - chiuse));
     }
 
     private static long conta(List<OperazioneRegistrata> operazioni, StatoOperazione stato) {

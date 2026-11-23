@@ -31,6 +31,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param posizioniMassime quante posizioni VERE si tengono aperte insieme.
  *        Non vale per le analisi su carta: quelle non costano commissioni e
  *        non corrono rischio, quindi limitarle rallenterebbe solo la misura.
+ * @param giorniBreakout il trigger provvisorio: la chiusura deve superare il
+ *        massimo di questi giorni, ultima candela esclusa.
+ * @param multiploVolumeBreakout e il controvalore della rottura deve essere
+ *        almeno questo multiplo della media degli stessi giorni.
  */
 @ConfigurationProperties(prefix = "scansione")
 public record ProprietaScansione(
@@ -49,11 +53,17 @@ public record ProprietaScansione(
         int giorniTimeStop,
         int registrazioniPerGiudizio,
         int posizioniMassime,
-        TipoOrdine tipoOrdine) {
+        TipoOrdine tipoOrdine,
+        int giorniBreakout,
+        double multiploVolumeBreakout) {
 
     public ProprietaScansione {
         if (watchlist == null || watchlist.isEmpty()) {
             throw new IllegalArgumentException("La watchlist non puo' essere vuota");
+        }
+        if (giorniBreakout <= 0 || multiploVolumeBreakout <= 0) {
+            throw new IllegalArgumentException(
+                    "scansione.giorni-breakout e scansione.multiplo-volume-breakout vanno indicati");
         }
         if (tipoOrdine == null) {
             tipoOrdine = TipoOrdine.LIMITE;

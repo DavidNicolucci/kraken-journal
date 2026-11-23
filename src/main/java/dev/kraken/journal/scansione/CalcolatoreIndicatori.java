@@ -43,11 +43,15 @@ public final class CalcolatoreIndicatori {
      *        stop. Arriva dalla configurazione e non e' fissato qui: se il
      *        numero vivesse in due posti, cambiarne uno solo darebbe uno stop
      *        diverso da quello dichiarato nella guida.
+     * @param giorniBreakout su quante candele prima dell'ultima cercare il
+     *        massimo da rompere e il volume medio. Anche questo dalla
+     *        configurazione, per lo stesso motivo.
      */
-    public static Indicatori calcola(List<Candela> candele, int giorniMinimoStop) {
+    public static Indicatori calcola(List<Candela> candele, int giorniMinimoStop, int giorniBreakout) {
         verifica(candele, CANDELE_MINIME);
+        List<Candela> precedenti = candele.subList(0, candele.size() - 1);
         double mediaMobile20 = mediaMobile(candele, PERIODO_MEDIA);
-        double mediaMobilePrecedente = mediaMobile(candele.subList(0, candele.size() - 1), PERIODO_MEDIA);
+        double mediaMobilePrecedente = mediaMobile(precedenti, PERIODO_MEDIA);
         Candela ultima = candele.get(candele.size() - 1);
 
         return new Indicatori(
@@ -58,9 +62,12 @@ public final class CalcolatoreIndicatori {
                 rsi(candele, PERIODO_RSI),
                 atr(candele, PERIODO_ATR),
                 volumeMedio(candele, PERIODO_MEDIA),
-                massimo(candele, 30),
+                massimo(precedenti, 30),
                 minimo(candele, 10),
-                minimo(candele, giorniMinimoStop));
+                minimo(candele, giorniMinimoStop),
+                massimo(precedenti, giorniBreakout),
+                ultima.controvalore(),
+                volumeMedio(precedenti, giorniBreakout));
     }
 
     /** Media semplice delle ultime {@code periodo} chiusure. */

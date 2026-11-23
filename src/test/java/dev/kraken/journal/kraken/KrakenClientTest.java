@@ -53,4 +53,40 @@ class KrakenClientTest {
         assertNotEquals(firme.get(0), firme.get(1), "un nonce riusato verrebbe rifiutato da Kraken");
         server.verify();
     }
+
+    private static final String UNA_RIGA_DEL_LEDGER = """
+            {"error":[],"result":{"count":1,"ledger":{"L1":{
+              "refid":"TAPP1","time":1758153600.5,"type":"receive","subtype":"","aclass":"currency",
+              "asset":"SOL","amount":"0.2000","fee":"0.0000","balance":"0.2000"}}}}
+            """;
+
+    private static final String UN_TRADE_MAKER = """
+            {"error":[],"result":{"count":1,"trades":{"T1":{
+              "ordertxid":"O1","pair":"XXBTZUSD","time":1758153600.5,"type":"buy","ordertype":"limit",
+              "price":"100","cost":"100","fee":"0.4","vol":"1","margin":"0","maker":true}}}}
+            """;
+
+    @Test
+    void leggeIlLedgerELaTariffaDiOgniTrade() {
+        RestClient.Builder costruttore = RestClient.builder().baseUrl("https://api.kraken.com");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(costruttore).build();
+        server.expect(requestTo("https://api.kraken.com/0/private/Ledgers"))
+                .andRespond(withSuccess(UNA_RIGA_DEL_LEDGER, MediaType.APPLICATION_JSON));
+        server.expect(requestTo("https://api.kraken.com/0/private/TradesHistory"))
+                .andRespond(withSuccess(UN_TRADE_MAKER, MediaType.APPLICATION_JSON));
+
+        var proprieta = new KrakenProperties("https://api.kraken.com", "chiave", SEGRETO);
+        var client = new KrakenClient(costruttore.build(), new KrakenSigner(proprieta), proprieta, Duration.ZERO);
+        Instant da = Instant.EPOCH;
+        Instant a = Instant.parse("2026-09-24T00:00:00Z");
+
+        var ledger = client.fetchLedger(da, a);
+        var trade = client.fetchTrades(da, a);
+
+        assertEquals(1, ledger.size());
+        assertEquals("receive", ledger.get(0).type());
+        assertEquals("TAPP1", ledger.get(0).refid());
+        assertEquals(Boolean.TRUE, trade.get(0).maker());
+        server.verify();
+    }
 }

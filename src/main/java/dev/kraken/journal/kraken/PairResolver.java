@@ -27,6 +27,15 @@ public class PairResolver {
     private static final Set<String> FIAT = Set.of(
             "USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF");
 
+    /**
+     * I soli codici che Kraken scrive con il prefisso storico. Un elenco e non
+     * una regola sulla lunghezza: "ogni codice di quattro lettere che inizia
+     * per X o Z" tagliava anche ZETA e ZEUS, che diventavano ETA ed EUS.
+     */
+    private static final Set<String> CODICI_STORICI = Set.of(
+            "XXBT", "XETH", "XLTC", "XXRP", "XXLM", "XZEC", "XXMR", "XETC", "XREP", "XMLN", "XXDG",
+            "ZUSD", "ZEUR", "ZGBP", "ZJPY", "ZCAD", "ZAUD", "ZCHF");
+
     public record Pair(String raw, String base, String quote, boolean fxConversion) {
         public String display() {
             return base + "/" + quote;
@@ -41,23 +50,38 @@ public class PairResolver {
 
         for (String quote : QUOTES) {
             if (upper.length() > quote.length() && upper.endsWith(quote)) {
-                String base = normalize(upper.substring(0, upper.length() - quote.length()));
-                String normalizedQuote = normalize(quote);
-                boolean fx = FIAT.contains(base) && FIAT.contains(normalizedQuote);
-                return new Pair(rawPair, base, normalizedQuote, fx);
+                String base = upper.substring(0, upper.length() - quote.length());
+                // Una quotazione col prefisso storico non segue mai una base di
+                // una o due lettere: in XTZEUR la Z appartiene a XTZ, non a ZEUR.
+                if (CODICI_STORICI.contains(quote) && base.length() < 3) {
+                    continue;
+                }
+                return componi(rawPair, base, quote);
             }
         }
         return new Pair(rawPair, upper, "?", false);
     }
 
     /**
-     * Rimuove il prefisso storico X/Z solo quando cio' che resta e' un codice
-     * valuta di tre lettere: XXBT -> XBT, ZEUR -> EUR, ma SOL resta SOL.
+     * La coppia a partire dai due codici separati, come li riporta il ledger
+     * (ZEUR, XXBT, SOL.F): serve per le operazioni fatte dall'app, che non
+     * hanno un nome di coppia.
      */
-    private static String normalize(String code) {
-        if (code.length() == 4 && (code.charAt(0) == 'X' || code.charAt(0) == 'Z')) {
-            return code.substring(1);
-        }
-        return code;
+    public Pair coppia(String base, String quote) {
+        return componi(asset(base) + asset(quote), base, quote);
+    }
+
+    /** Il codice di una moneta come lo si legge: ZEUR -> EUR, XXBT -> XBT, SOL.F -> SOL. */
+    public String asset(String codice) {
+        String pulito = codice.toUpperCase().replaceFirst("\\..*$", "");
+        return CODICI_STORICI.contains(pulito) ? pulito.substring(1) : pulito;
+    }
+
+    public boolean fiat(String codice) {
+        return FIAT.contains(asset(codice));
+    }
+
+    private Pair componi(String raw, String base, String quote) {
+        return new Pair(raw, asset(base), asset(quote), fiat(base) && fiat(quote));
     }
 }

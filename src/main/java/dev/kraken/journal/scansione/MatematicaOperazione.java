@@ -12,15 +12,26 @@ package dev.kraken.journal.scansione;
  * comprese. Quindi "meno una R" e' esattamente la perdita pianificata, non la
  * sola distanza dal prezzo di entrata. E' l'unico modo perche' il risultato
  * medio in R del registro sia confrontabile con le soglie della guida.
+ *
+ * CORRETTO il 23/11. Lo stop si pagava alla tariffa dell'entrata, cioe' come
+ * ordine limite. Ma uno stop che scatta prende il prezzo che c'e': e' sempre
+ * un ordine a mercato. Con l'entrata a limite la perdita vera allo stop era
+ * fra 1,03 e 1,07 volte quella pianificata, a seconda dell'ampiezza.
  */
 public final class MatematicaOperazione {
+
+    /**
+     * Come si esce quando non si sceglie il prezzo: allo stop e al time stop.
+     * L'obiettivo invece e' un ordine in attesa, e paga la tariffa scelta.
+     */
+    public static final TipoOrdine USCITA_FORZATA = TipoOrdine.MERCATO;
 
     private MatematicaOperazione() {
     }
 
-    /** Quanto si perde per ogni unita' se lo stop viene colpito. */
+    /** Quanto si perde per ogni unita' se lo stop viene colpito: si esce a mercato. */
     public static double rischioPerUnita(double entrata, double stop, TipoOrdine tipoOrdine) {
-        return rischioPerUnita(entrata, stop, tipoOrdine.commissione(), tipoOrdine.commissione());
+        return rischioPerUnita(entrata, stop, tipoOrdine.commissione(), USCITA_FORZATA.commissione());
     }
 
     /** Quanto si guadagna o si perde per ogni unita' uscendo a un dato prezzo. */
@@ -64,10 +75,16 @@ public final class MatematicaOperazione {
      * Risultato espresso in R. Vale -1 quando si esce esattamente allo stop,
      * qualunque sia l'ampiezza: e' quello che rende confrontabili fra loro
      * operazioni su coppie con volatilita' diverse.
+     *
+     * @param tipoEntrata come si e' entrati, e come si esce all'obiettivo.
+     * @param tipoUscita come si e' usciti questa volta: {@link #USCITA_FORZATA}
+     *        allo stop e al time stop, la tariffa scelta all'obiettivo.
      */
-    public static double risultatoInR(double entrata, double stop, double uscita, TipoOrdine tipoOrdine) {
-        double rischio = rischioPerUnita(entrata, stop, tipoOrdine);
-        return rischio <= 0 ? 0 : risultatoPerUnita(entrata, uscita, tipoOrdine) / rischio;
+    public static double risultatoInR(double entrata, double stop, double uscita,
+                                      TipoOrdine tipoEntrata, TipoOrdine tipoUscita) {
+        double rischio = rischioPerUnita(entrata, stop, tipoEntrata);
+        return rischio <= 0 ? 0 : risultatoPerUnita(entrata, uscita, Verso.ACQUISTO,
+                tipoEntrata.commissione(), tipoUscita.commissione()) / rischio;
     }
 
     /** Prezzo a cui si esce in pari dopo aver pagato le commissioni sui due lati. */
