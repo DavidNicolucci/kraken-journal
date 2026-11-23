@@ -82,7 +82,7 @@ Uno stop dalla parte sbagliata dell'entrata restituisce `400` con il motivo.
 
 ### Scansione — `GET /api/scansione?soloIdonee=false`
 
-Esamina la watchlist in `application.yml`, congelata al 23/09/2026 per non
+Esamina la watchlist in `application.yml`, congelata al 19/11/2026 per non
 scegliere a posteriori le coppie sopravvissute. Per ogni coppia calcola gli
 indicatori sulle candele giornaliere chiuse e applica i controlli, in ordine:
 
