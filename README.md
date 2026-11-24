@@ -115,11 +115,9 @@ indicatori sulle candele giornaliere chiuse e applica i controlli, in ordine:
 | `LIQUIDITA` | controvalore 24h sopra `volume-minimo` |
 | `TREND` | media mobile a 20 in salita e prezzo sopra la media |
 | `BREAKOUT` | il trigger: chiusura sopra il massimo dei `giorni-breakout` giorni prima, con controvalore almeno `multiplo-volume-breakout` volte la loro media |
-| `MOMENTO` | RSI a 14 fra `rsi-minimo` e `rsi-massimo` |
 | `DISTANZA_DALLA_MEDIA` | prezzo non oltre `distanza-massima-dalla-media` % dalla media |
 | `PREZZO_ATTUALE` | il prezzo di stamattina conferma la chiusura di ieri: sopra media e rottura, entro la stessa distanza dalla media |
 | `AMPIEZZA_STOP` | stop fra `ampiezza-stop-minima` e `ampiezza-stop-massima` % |
-| `RESISTENZA_INTERMEDIA` | il massimo dei 30 giorni prima della rottura non sta fra entrata e obiettivo |
 
 Per ogni coppia propone anche un piano:
 
@@ -131,7 +129,7 @@ Per ogni coppia propone anche un piano:
 Per impostazione predefinita restituisce anche le coppie bocciate, con il
 controllo che le ha fermate: sapere perche' una coppia non passa e' piu' utile
 di una lista corta. Le soglie si confrontano con il valore mostrato, arrotondato
-come lo si legge: un RSI di 49,96 si legge 50,0 e passa "fra 50 e 70".
+come lo si legge: uno stop al 4,96% si legge 5,0% e passa "tra 5% e 10%".
 
 ### Registro — `/api/registro`
 

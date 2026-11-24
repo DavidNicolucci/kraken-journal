@@ -153,7 +153,7 @@ class TradingJournalServiceTest {
     }
 
     private static TradingJournalService servizio(KrakenClient kraken, MercatoClient mercato, ServizioRegistro registro) {
-        var scansione = new ProprietaScansione(List.of("XBTEUR"), 1_000_000, 50, 70, 12, 5, 10, 2.0,
+        var scansione = new ProprietaScansione(List.of("XBTEUR"), 1_000_000, 12, 5, 10, 2.0,
                 203, 1, 5, 0.5, 15, 15, 2, TipoOrdine.LIMITE, 20, 1.5);
         var commento = new ProprietaCommento(LocalDate.of(2026, 11, 19), 50, 50, 2, 3);
         return new TradingJournalService(kraken, new StoriaOperazioni(new PairResolver()),

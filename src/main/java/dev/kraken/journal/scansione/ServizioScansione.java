@@ -107,14 +107,13 @@ public class ServizioScansione {
 
     /**
      * Le soglie si confrontano con il valore che la pagina mostra, arrotondato
-     * come lei: un RSI di 49,96 si legge 50,0, e bocciarlo contro "fra 50 e 70"
+     * come lei: uno stop al 4,96% si legge 5,0%, e bocciarlo contro "tra 5% e 10%"
      * sembrava un errore. I prezzi restano interi, con sei cifre significative
      * a video: con quattro decimali fissi PEPE diventava zero.
      */
     private List<EsitoControllo> controlla(Quotazione quotazione, Indicatori i, Piano piano) {
         double controvalore = arrotondato(quotazione.controvalore24h(), 0);
         double multiploVolume = arrotondato(i.multiploVolume(), 1);
-        double rsi = arrotondato(i.rsi14(), 1);
         double distanza = arrotondato(Math.abs(i.distanzaDallaMedia()), 1);
         double ultimo = quotazione.ultimo();
         double distanzaAttuale = arrotondato(Math.abs(ultimo / i.mediaMobile20() - 1) * 100, 1);
@@ -134,10 +133,6 @@ public class ServizioScansione {
                         "chiusura " + prezzo(i.chiusura()) + ", volume " + arrotonda(multiploVolume, 1) + "x",
                         "sopra " + prezzo(i.massimoBreakout()) + " con volume >= "
                                 + arrotonda(proprieta.multiploVolumeBreakout(), 1) + "x"),
-                EsitoControllo.di(Controllo.MOMENTO,
-                        rsi >= proprieta.rsiMinimo() && rsi <= proprieta.rsiMassimo(),
-                        arrotonda(rsi, 1),
-                        "tra " + arrotonda(proprieta.rsiMinimo(), 0) + " e " + arrotonda(proprieta.rsiMassimo(), 0)),
                 // Valore assoluto: la distanza conta in entrambe le direzioni.
                 // Col segno, un prezzo molto SOTTO la media superava il controllo
                 // senza che volesse dire niente. Indicatori resta col segno:
@@ -157,11 +152,7 @@ public class ServizioScansione {
                                 && ampiezzaStop <= proprieta.ampiezzaStopMassima(),
                         arrotonda(ampiezzaStop, 1) + "%",
                         "tra " + arrotonda(proprieta.ampiezzaStopMinima(), 0) + "% e "
-                                + arrotonda(proprieta.ampiezzaStopMassima(), 0) + "%"),
-                EsitoControllo.di(Controllo.RESISTENZA_INTERMEDIA,
-                        i.massimo30Precedente() <= piano.entrata() || i.massimo30Precedente() >= piano.obiettivo(),
-                        "massimo 30g " + prezzo(i.massimo30Precedente()),
-                        "fuori da " + prezzo(piano.entrata()) + " - " + prezzo(piano.obiettivo())));
+                                + arrotonda(proprieta.ampiezzaStopMassima(), 0) + "%"));
     }
 
     /**

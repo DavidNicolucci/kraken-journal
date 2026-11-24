@@ -59,7 +59,7 @@ class ServizioScansioneTest {
         Candidato candidato = esamina(candeleConRottura(2.0), 163.40);
 
         assertTrue(candidato.tuttiSuperati(), bocciati(candidato));
-        assertEquals(8, candidato.superati());
+        assertEquals(6, candidato.superati());
     }
 
     /**
@@ -154,19 +154,14 @@ class ServizioScansioneTest {
         return serie(giorno -> 100 + giorno);
     }
 
-    /**
-     * Salita con ritracciamenti settimanali. Serve perche' una serie monotona
-     * manda l'RSI di Wilder a 100 e non superera' mai il controllo sul momento:
-     * questa si ferma a 60, dentro la fascia utile.
-     */
+    /** Salita con ritracciamenti settimanali, usata come base per i test sul breakout. */
     private static List<Candela> candeleConRitracciamenti() {
         return serie(giorno -> 100 + giorno * 0.75 + 4 * Math.sin((giorno + 3) * 2 * Math.PI / 7));
     }
 
     /**
      * La serie con ritracciamenti, con l'ultima candela che chiude mezzo punto
-     * sopra il massimo dei venti giorni prima (162,90). Una rottura piu' ampia
-     * porterebbe l'RSI sopra 70 e la boccerebbe il controllo sul momento.
+     * sopra il massimo dei venti giorni prima (162,90).
      */
     private static List<Candela> candeleConRottura(double multiploVolume) {
         List<Candela> candele = new ArrayList<>(candeleConRitracciamenti());
@@ -198,7 +193,7 @@ class ServizioScansioneTest {
     }
 
     private static ProprietaScansione proprieta(List<String> watchlist) {
-        return new ProprietaScansione(watchlist, 1_000_000, 50, 70, 12, 5, 10, 2.0,
+        return new ProprietaScansione(watchlist, 1_000_000, 12, 5, 10, 2.0,
                 203, 1, 5, 0.5, 15, 15, 2, TipoOrdine.LIMITE, 20, 1.5);
     }
 

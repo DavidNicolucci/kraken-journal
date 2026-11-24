@@ -17,7 +17,6 @@ public enum Controllo {
      * registro misurava un'ipotesi diversa da quella scritta sull'etichetta.
      */
     BREAKOUT("chiusura sopra il massimo dei giorni precedenti, con volume sopra la media"),
-    MOMENTO("RSI a 14 nella fascia utile"),
     DISTANZA_DALLA_MEDIA("quanto il prezzo e' gia' scappato dalla media"),
     /**
      * I controlli sopra guardano la chiusura di ieri, l'entrata e' il prezzo
@@ -25,8 +24,7 @@ public enum Controllo {
      * sotto la media, o e' scappato troppo, il segnale di ieri non vale piu'.
      */
     PREZZO_ATTUALE("il prezzo di stamattina conferma la chiusura: sopra media e rottura, non troppo lontano"),
-    AMPIEZZA_STOP("lo stop cade nella finestra compatibile con le commissioni"),
-    RESISTENZA_INTERMEDIA("il massimo dei 30 giorni prima della rottura non sta fra entrata e obiettivo");
+    AMPIEZZA_STOP("lo stop cade nella finestra compatibile con le commissioni");
 
     private final String descrizione;
 

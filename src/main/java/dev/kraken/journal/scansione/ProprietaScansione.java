@@ -40,8 +40,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record ProprietaScansione(
         List<String> watchlist,
         double volumeMinimo,
-        double rsiMinimo,
-        double rsiMassimo,
         double distanzaMassimaDallaMedia,
         double ampiezzaStopMinima,
         double ampiezzaStopMassima,

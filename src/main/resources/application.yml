@@ -71,8 +71,6 @@ scansione:
     - LINKEUR
     - HYPEEUR
   volume-minimo: 1000000      # controvalore 24h nella valuta di quotazione (EUR)
-  rsi-minimo: 50
-  rsi-massimo: 70
   distanza-massima-dalla-media: 12   # %
   ampiezza-stop-minima: 5            # %
   ampiezza-stop-massima: 10          # %
