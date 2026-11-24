@@ -32,19 +32,21 @@ table{margin-top:4px}
 .side button:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 
 /* ---------- asse dei prezzi (elemento firma) ---------- */
-.axis-wrap{margin:6px 0 0}
-.axis{position:relative;height:96px;border-bottom:1px solid var(--ink);margin-top:34px}
+.axis-wrap{margin:24px 0 0}
+.axis{position:relative;height:96px;border-bottom:1px solid var(--ink);margin-top:44px}
 .zone{position:absolute;bottom:0;top:0}
 .zone.loss{background:repeating-linear-gradient(45deg,rgba(163,58,43,.16) 0 3px,transparent 3px 8px)}
 .zone.fees{background:repeating-linear-gradient(45deg,rgba(138,111,46,.30) 0 2px,transparent 2px 6px)}
 .zone.gain{background:rgba(44,107,80,.13)}
-.mark{position:absolute;top:-30px;bottom:0;width:1px;background:var(--ink)}
+.mark{position:absolute;top:-34px;bottom:0;width:1px;background:var(--ink)}
 .mark.dashed{background:none;border-left:1px dashed var(--unknown)}
-.mark b{position:absolute;top:-2px;left:6px;font-family:var(--cond);font-size:10px;
-  font-weight:600;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
-.mark i{position:absolute;top:12px;left:6px;font-style:normal;font-size:12px;
-  color:var(--ink-soft);white-space:nowrap;font-variant-numeric:tabular-nums}
-.mark.right b,.mark.right i{left:auto;right:6px}
+.mark-label{position:absolute;top:-2px;left:5px;display:flex;flex-direction:column;
+  line-height:1.25;background:var(--paper);padding:0 3px;z-index:2;white-space:nowrap}
+.mark.right .mark-label{left:auto;right:5px;text-align:right}
+.mark-label b{font-family:var(--cond);font-size:10px;font-weight:600;
+  letter-spacing:.08em;text-transform:uppercase}
+.mark-label i{font-style:normal;font-size:12px;color:var(--ink-soft);
+  font-variant-numeric:tabular-nums}
 .axis-key{display:flex;flex-wrap:wrap;gap:8px 24px;margin-top:14px;font-size:12px;color:var(--ink-soft)}
 .axis-key span{display:flex;align-items:center;gap:8px}
 .sw{width:13px;height:13px;border:1px solid var(--rule-strong);flex:none}
@@ -182,7 +184,8 @@ const valori = () => ({
 
 function svuota(messaggio){
   $('verdict').innerHTML = messaggio;
-  $('figures').innerHTML = ''; $('breakdown').innerHTML = ''; $('axis').innerHTML = '';
+  $('figures').innerHTML = ''; $('breakdown').innerHTML = '';
+  $('axis').innerHTML = ''; $('axis').style.marginTop = '';
 }
 
 /* Non e' il calcolo tornato di nascosto: e' solo capire se i campi sono
@@ -308,10 +311,12 @@ function mostra(v, e){
     {p:e.pareggio, t:'Pareggio',v:prz(e.pareggio), dashed:true}
   ].concat(conObiettivo ? [{p:v.obiettivo, t:'Obiettivo', v:prz(v.obiettivo)}] : []);
 
-  $('axis').innerHTML =
+  const axis = $('axis');
+  axis.innerHTML =
     zone.map(z => `<div class="zone ${z.c}" style="left:${x(z.a)}%;width:${Math.max(0,x(z.b)-x(z.a))}%"></div>`).join('') +
-    marks.map(m => `<div class="mark${m.dashed ? ' dashed' : ''}${x(m.p) > 70 ? ' right' : ''}"
-        style="left:${x(m.p)}%"><b>${m.t}</b><i>${m.v}</i></div>`).join('');
+    marks.map(m => `<div class="mark${m.dashed ? ' dashed' : ''}"
+        style="left:${x(m.p)}%"><span class="mark-label"><b>${m.t}</b><i>${m.v}</i></span></div>`).join('');
+  disponiEtichette(axis);
 
   $('breakdown').innerHTML = `
     <thead><tr><th>Voce</th><th>Calcolo</th><th>Valore</th></tr></thead>
@@ -327,6 +332,48 @@ function mostra(v, e){
           : `${prz(v.entrata)} &times; (1 &minus; ${pct(v.commissioneEntrata)}) &divide; (1 + ${pct(v.commissioneUscita)})`}</td><td>${prz(e.pareggio)}</td></tr>
     </tbody>`;
 }
+
+/* Quando due o piu' indicatori stanno vicini (es. entrata e pareggio), le
+   etichette sulla stessa riga si sovrappongono. Qui misuriamo la larghezza
+   reale di ogni etichetta e le disponiamo su altezze diverse (righe impilate)
+   con la linea verticale che sale fino alla propria etichetta. */
+function disponiEtichette(axis){
+  const larghezza = axis.clientWidth;
+  if (!larghezza) return;
+  const ALTEZZA = 36, MARGINE = 10, SCARTO = 5;
+  const nodi = [...axis.querySelectorAll('.mark')].map(el => ({
+    el,
+    x: (parseFloat(el.style.left) / 100) * larghezza,
+    w: el.querySelector('.mark-label').offsetWidth
+  })).sort((a, b) => a.x - b.x);
+  if (!nodi.length) return;
+
+  // Da destra a sinistra: quando due etichette verso destra collidono, quella
+  // piu' a sinistra sale di una riga cosi' la sua linea verticale resta a
+  // sinistra del testo sottostante e non lo attraversa mai.
+  const righe = [];
+  const libero = (r, da, a) =>
+    !(righe[r] || []).some(([x0, x1]) => da < x1 + MARGINE && a > x0 - MARGINE);
+
+  let rigaMax = 0;
+  for (const m of nodi.slice().reverse()) {
+    const aSinistra = m.x + SCARTO + m.w > larghezza;
+    const da = aSinistra ? m.x - SCARTO - m.w : m.x + SCARTO;
+    const a  = aSinistra ? m.x - SCARTO       : m.x + SCARTO + m.w;
+
+    let r = 0;
+    while (!libero(r, da, a)) r++;
+    (righe[r] ??= []).push([da, a]);
+    rigaMax = Math.max(rigaMax, r);
+
+    m.el.classList.toggle('right', aSinistra);
+    m.el.style.top = `${-(ALTEZZA * (r + 1))}px`;
+  }
+  axis.style.marginTop = `${ALTEZZA * (rigaMax + 1) + 14}px`;
+}
+
+window.addEventListener('resize', () => disponiEtichette($('axis')));
+document.fonts?.ready.then(() => disponiEtichette($('axis')));
 
 /* Le tariffe arrivano dal server, da TipoOrdine: erano scritte qui, nel
    journal e in Java, e al primo cambio di livello si sarebbero aggiornate in
