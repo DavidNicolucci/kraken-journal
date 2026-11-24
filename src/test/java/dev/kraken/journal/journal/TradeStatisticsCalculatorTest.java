@@ -128,7 +128,7 @@ class TradeStatisticsCalculatorTest {
     void leCommissioniSulVolumeSonoSempreCalcolabili() {
         var stats = calcola(trade("SOLUSD", "buy", "100", "100.00", "1.00", "1.0", 1));
 
-        assertNumero("1.00", stats.feesToVolumePercent());
+        assertNumero("1.00", totali(stats, "USD").commissioniPercentuale());
     }
 
     /**
@@ -142,10 +142,9 @@ class TradeStatisticsCalculatorTest {
                 trade("ZEURZUSD", "sell", "1.17", "117.00", "0.30", "100.0", 1),
                 trade("SOLUSD", "buy", "100", "100.00", "1.00", "1.0", 1));
 
-        assertNumero("0.30", stats.fxFees());
-        assertNumero("1.00", stats.tradingFees());
-        assertNumero("1.30", stats.totalFees());
-        assertNumero("1.00", stats.feesToVolumePercent());
+        assertNumero("0.30", find(stats, "ZEURZUSD").feesPaid());
+        assertNumero("1.00", totali(stats, "USD").commissioni());
+        assertNumero("1.00", totali(stats, "USD").commissioniPercentuale());
     }
 
     /** stripTrailingZeros trasforma 3000 in 3E+3, illeggibile una volta serializzato. */
@@ -300,6 +299,41 @@ class TradeStatisticsCalculatorTest {
         assertNumero("0", find(stats, "HYPE/EUR").openPosition());
         assertTrue(stats.posizioniAperte().isEmpty());
         assertEquals(1, stats.operazioniChiuse().size(), "lo 0,5% rimasto e' polvere: il giro e' chiuso");
+    }
+
+    /**
+     * Il primo giro lascia 0,005 HYPE: il loro costo, 0,35 EUR, esce dal suo
+     * investito e passa al giro dopo, che le vende insieme alle nuove.
+     * Investito e risultato di ogni giro parlano della stessa quantita'.
+     */
+    @Test
+    void ilCostoDellaPolverePassaAlGiroSuccessivo() {
+        var stats = calcola(
+                trade("HYPEEUR", "buy", "70", "70.00", "0.00", "1.0", 1),
+                trade("HYPEEUR", "sell", "78", "77.61", "0.00", "0.995", 2),
+                trade("HYPEEUR", "buy", "80", "80.00", "0.00", "1.0", 5),
+                trade("HYPEEUR", "sell", "90", "90.45", "0.00", "1.005", 6));
+
+        assertEquals(2, stats.operazioniChiuse().size());
+        var primo = stats.operazioniChiuse().get(0);
+        assertNumero("69.65", primo.investito());
+        assertNumero("7.96", primo.risultato());
+        var secondo = stats.operazioniChiuse().get(1);
+        assertNumero("80.35", secondo.investito());
+        assertNumero("10.10", secondo.risultato());
+    }
+
+    /** Un acquisto in un'altra valuta senza cambio: non c'e' ne' il risultato ne' l'investito, che sarebbe parziale. */
+    @Test
+    void senzaCambioAncheLInvestitoNonECalcolabile() {
+        var stats = calcola(
+                trade("SOLEUR", "buy", "100", "100.00", "0.00", "1.0", 1),
+                trade("SOLUSD", "buy", "110", "110.00", "0.00", "1.0", 2),
+                trade("SOLEUR", "sell", "105", "210.00", "0.00", "2.0", 3));
+
+        var giro = stats.operazioniChiuse().get(0);
+        assertNull(giro.investito());
+        assertNull(giro.risultato());
     }
 
     /** Due acquisti e due vendite sono un'operazione, la stessa unita' del registro. */

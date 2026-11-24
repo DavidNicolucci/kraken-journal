@@ -1,6 +1,7 @@
 package dev.kraken.journal.scansione;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
@@ -64,6 +65,27 @@ class ValutatoreSetupTest {
         Piano conMassimoAlto = valutatore.valuta(ENTRATA, indicatori(200));
 
         assertEquals(conMassimoBasso.obiettivo(), conMassimoAlto.obiettivo(), 0.000001);
+    }
+
+    /** Prezzo sceso sotto lo stop: il piano e' vuoto, non un'operazione da 2 R. */
+    @Test
+    void conIlPrezzoSottoLoStopIlPianoEVuoto() {
+        Piano piano = valutatore.valuta(67.00, indicatori(100));
+
+        assertEquals(0, piano.quantita());
+        assertEquals(0, piano.perditaAlloStop());
+        assertEquals(0, piano.guadagnoAllObiettivo());
+        assertEquals(0, piano.rapporto());
+        assertTrue(piano.ampiezzaStop() < 0);
+    }
+
+    @Test
+    void unPeriodoFuoriMisuraFermaLAvvio() {
+        var errore = assertThrows(IllegalArgumentException.class, () -> new ProprietaScansione(List.of("HYPEEUR"),
+                1_000_000, 50, 70, 12, 5, 10, 2.0, 203, 1, 0, 0.5, 15, 15, 2, TipoOrdine.LIMITE, 20, 1.5));
+        assertTrue(errore.getMessage().contains("giorni-minimo-stop va da 1 a 60"), errore.getMessage());
+        assertThrows(IllegalArgumentException.class, () -> new ProprietaScansione(List.of("HYPEEUR"),
+                1_000_000, 50, 70, 12, 5, 10, 2.0, 203, 1, 5, 0.5, 15, 15, 2, TipoOrdine.LIMITE, 60, 1.5));
     }
 
     /** Il minimo e' scelto perche', tolto lo 0,5% di margine, lo stop cada a 68,00. */

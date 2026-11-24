@@ -49,8 +49,11 @@ class ServizioRegistroTest {
 
     @Test
     void ilQuantileDiStudentCoincideConLeTavole() {
-        assertEquals(2.145, Statistica.quantileT(14), 0.002);
-        assertEquals(2.042, Statistica.quantileT(30), 0.002);
+        assertEquals(12.706, Statistica.quantileT(1), 0.001);
+        assertEquals(4.303, Statistica.quantileT(2), 0.001);
+        assertEquals(2.145, Statistica.quantileT(14), 0.001);
+        assertEquals(2.042, Statistica.quantileT(30), 0.001);
+        assertEquals(2.040, Statistica.quantileT(31), 0.001);
     }
 
     /**

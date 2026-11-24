@@ -43,7 +43,9 @@ public class ValutatoreSetup {
         TipoOrdine tipoOrdine = proprieta.tipoOrdine();
         double stop = indicatori.minimoPerStop() * (1 - proprieta.margineStop() / 100);
 
-        double perditaPerUnita = MatematicaOperazione.rischioPerUnita(ultimoPrezzo, stop, tipoOrdine);
+        // Prezzo gia' sotto lo stop: non c'e' un'operazione da misurare, e il valore
+        // assoluto di rischioPerUnita la farebbe sembrare valida, con quantita' e 2 R.
+        double perditaPerUnita = ultimoPrezzo > stop ? MatematicaOperazione.rischioPerUnita(ultimoPrezzo, stop, tipoOrdine) : 0;
         double obiettivo = MatematicaOperazione.obiettivoPerMultiplo(ultimoPrezzo, perditaPerUnita,
                 proprieta.multiploObiettivo(), tipoOrdine);
         double guadagnoPerUnita = MatematicaOperazione.risultatoPerUnita(ultimoPrezzo, obiettivo, tipoOrdine);

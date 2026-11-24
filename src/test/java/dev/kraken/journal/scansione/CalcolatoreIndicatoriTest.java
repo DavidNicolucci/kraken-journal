@@ -43,6 +43,11 @@ class CalcolatoreIndicatoriTest {
     }
 
     @Test
+    void lRsiDiUnaSeriePiattaStaAlCentro() {
+        assertEquals(50.0, CalcolatoreIndicatori.rsi(candele(7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7), 14), 0.0001);
+    }
+
+    @Test
     void lAtrContaIlSaltoDallaChiusuraPrecedente() {
         List<Candela> piatte = new ArrayList<>(candeleConEscursione(16, 100, 2));
         // Una candela che apre dieci punti sopra: massimo-minimo resta 2, ma il

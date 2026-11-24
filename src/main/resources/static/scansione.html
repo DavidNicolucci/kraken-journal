@@ -222,7 +222,7 @@ function rigaCandidato(c){
     <td>${grande(c.quotazione.controvalore24h)}</td>
     <td>${fmt(c.indicatori.rsi14,1)}</td>
     <td>${fmt(c.indicatori.distanzaDallaMedia,1)}%</td>
-    <td>${prz(c.piano.stop)}<span class="sub">${fmt(c.piano.ampiezzaStop,1)}% sotto</span></td>
+    <td>${prz(c.piano.stop)}<span class="sub">${c.piano.ampiezzaStop >= 0 ? fmt(c.piano.ampiezzaStop,1) + '% sotto' : 'sopra il prezzo'}</span></td>
     <td>${prz(c.piano.obiettivo)}<span class="sub">${fmt(c.piano.rapporto,2)} R</span></td>
     <td><span class="conteggio ${c.tuttiSuperati ? 'pieno' : ''}">${c.superati}/${c.totale}</span></td>
   </tr>` + (bocciati.length

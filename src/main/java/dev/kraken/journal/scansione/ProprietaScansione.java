@@ -61,9 +61,15 @@ public record ProprietaScansione(
         if (watchlist == null || watchlist.isEmpty()) {
             throw new IllegalArgumentException("La watchlist non puo' essere vuota");
         }
-        if (giorniBreakout <= 0 || multiploVolumeBreakout <= 0) {
-            throw new IllegalArgumentException(
-                    "scansione.giorni-breakout e scansione.multiplo-volume-breakout vanno indicati");
+        // Controllati all'avvio: un valore fuori misura farebbe saltare ogni coppia
+        // a ogni scansione, con un avviso nel log invece di un errore chiaro.
+        int massimo = CalcolatoreIndicatori.CANDELE_MINIME;
+        if (giorniMinimoStop <= 0 || giorniMinimoStop > massimo || giorniBreakout <= 0 || giorniBreakout >= massimo) {
+            throw new IllegalArgumentException("scansione.giorni-minimo-stop va da 1 a " + massimo
+                    + " e scansione.giorni-breakout da 1 a " + (massimo - 1) + ": la scansione legge " + massimo + " candele");
+        }
+        if (multiploVolumeBreakout <= 0) {
+            throw new IllegalArgumentException("scansione.multiplo-volume-breakout va indicato");
         }
         if (tipoOrdine == null) {
             tipoOrdine = TipoOrdine.LIMITE;

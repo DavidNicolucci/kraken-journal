@@ -85,7 +85,7 @@ lo spread dell'app non è visibile da nessuna parte.
 | `posizioniAperte` | posizioni in carico adesso: coppia, quantità, costo di carico, aperta dal |
 | `byPair` | per coppia: ordini, operazioni dall'app, volume, commissioni, risultato (anche parziale), quantità scoperta e sua provenienza, quantità venduta in un'altra valuta (convertita o senza cambio) |
 | `ledgerLetto` | se la chiave ha potuto leggere il ledger |
-| `tradingDays`, `fxConversions`, `fxFees` | giorni con ordini, conversioni valutarie e loro costo |
+| `tradingDays`, `fxConversions` | giorni con ordini e conversioni valutarie (il loro costo è nelle coppie di cambio di `byPair`) |
 | **dalla configurazione esistente** | `scansione.watchlist`, `registrazioni-per-giudizio` (15), `giorni-time-stop` (15), `capitale` (203), `rischio-per-operazione` (1%), `ampiezza-stop-minima` (5%), `posizioni-massime` (2), `tipo-ordine`, `giornaliero.fuso` |
 | **dal codice esistente** | `TipoOrdine` (0,40% / 0,80%), `MatematicaOperazione` (pareggio, rischio per unità), `PairResolver` (moneta di una coppia) |
 | **dal registro** (sola lettura) | le operazioni reali registrate: coppia e data |
@@ -454,21 +454,27 @@ cambiano in `application.yml` senza toccare il codice, tranne i punti 3 e 5.
   della vendita.
 - **Test:** `GeneratoreCommentoTest` (un test per regola, con il nome della
   regola) e `TestoItalianoTest`.
+- **Revisione del 24/11:** il costo della polvere passa al giro successivo;
+  investito non calcolabile come il risultato quando manca un cambio; tolti
+  da `JournalStats` i totali che sommavano EUR e USD; piano a zero con il
+  prezzo sotto lo stop; quotazioni abbinate con `PairResolver`; RSI 50 su
+  serie piatta e periodi della scansione controllati all'avvio; chiamate
+  private a Kraken una alla volta; quantile della t dalle tavole fino a 30.
 - **Niente commit:** il codice viene consegnato, il commit lo fai tu.
 
 ## 12. Esempio sui tuoi dati
 
-Risposta di `/api/journal?days=365` del 23 novembre 2026, con il ledger letto
-(chiave con *Query Ledger Entries*). Il report è quello che esce, con accanto
-la regola che ha prodotto ogni parte.
+Risposta di `/api/journal?days=365` del 24 novembre 2026, con il ledger letto
+(chiave con *Query Ledger Entries*) e il cambio EUR/USD del giorno. Il report è
+quello che esce, con accanto la regola che ha prodotto ogni parte.
 
 **Lettura** (C1, C2, C3)
 
-> Dal 23 novembre 2025 al 23 novembre 2026 hai fatto 48 ordini di trading (32
+> Dal 24 novembre 2025 al 24 novembre 2026 hai fatto 48 ordini di trading (32
 > dall'app) su 23 coppie, in 21 giorni diversi. A parte, 8 conversioni
 > valutarie. Le commissioni di trading sono state 8,01 EUR (lo 0,95% del
-> volume) e 0,68 USD (lo 0,72%). Il risultato realizzato è −19,92 EUR, su 14
-> operazioni chiuse: non basta per dire come è andato il periodo.
+> volume) e 0,68 USD (lo 0,72%). Il risultato realizzato è −20,60 EUR e −4,28
+> USD: 6 operazioni chiuse su 19 in guadagno.
 
 **Cosa dicono i dati** (5 voci, il massimo)
 
@@ -490,27 +496,33 @@ questo "l'unico".
 - Le operazioni fatte dall'app si potevano fare da Kraken Pro con un ordine limite?
 - Nei 3 acquisti eseguiti subito, serviva entrare a quel prezzo o un ordine limite sarebbe bastato?
 
-**Limiti di questi dati** (B1, B2, B3, B4, B5, B6)
+**Limiti di questi dati** (B2, B3, B4, B5, B6)
 
-> Le operazioni chiuse con un risultato calcolabile sono 14: sotto 15 il
-> risultato dice poco sul metodo. Hai venduto monete che non risultano
-> comprate su XBT/EUR, PEPE/EUR, NEAR/EUR, TRX/EUR, XDG/EUR e USDG/EUR
-> (ricompense, staking o accrediti): per quella parte il risultato non è
-> calcolabile e non è sommato a zero. Su LIGHTER/USD, SOL/EUR, ONE/USD e
-> AMI/USD hai venduto monete comprate in un'altra valuta: escono dalle
-> posizioni, ma senza un tasso di cambio quella parte non ha un risultato. Le
-> operazioni sono in EUR e USD: ogni importo è dato nella sua valuta, e le
+> Hai venduto monete che non risultano comprate su XBT/EUR, PEPE/EUR, NEAR/EUR,
+> TRX/EUR, XDG/EUR e USDG/EUR (ricompense, staking o accrediti): per quella
+> parte il risultato non è calcolabile e non è sommato a zero. Su LIGHTER/USD,
+> SOL/EUR, ONE/USD e AMI/USD hai venduto monete comprate in un'altra valuta: il
+> costo è convertito al cambio medio del giorno della vendita, preso da Kraken.
+> Le operazioni sono in EUR e USD: ogni importo è dato nella sua valuta, e le
 > valute non si sommano fra loro. Sulle operazioni fatte dall'app il costo vero
 > è più alto di quello mostrato: oltre alla commissione c'è lo spread, che sta
 > dentro il prezzo e Kraken non riporta. Il risultato è calcolato a costo medio
 > ponderato su tutto lo storico del conto: serve a leggere come hai operato e
 > non vale come calcolo fiscale.
 
+**Cosa è cambiato dal 23/11**
+
+Col cambio del giorno le vendite di LIGHTER, ONE e AMI (comprate in EUR
+dall'app, vendute in USD su Kraken Pro) e di SOL (al contrario) hanno un
+risultato. Le operazioni chiuse calcolabili passano da 14 a 19, le coppie con
+risultato parziale da 10 a 6, e B1 ("sotto 15 il risultato dice poco") non
+scatta più. Il risultato in EUR passa da −19,92 a −20,60 per la vendita di SOL;
+quello in USD, −4,28, prima non c'era.
+
 **Cosa resta fuori dal calcolo**
 
-- **Vendite in un'altra valuta (B3).** LIGHTER, ONE e AMI comprate in EUR
-  dall'app e vendute in USD su Kraken Pro, SOL al contrario: escono dalle
-  posizioni senza un risultato. Per darlo serve il cambio EUR/USD del giorno.
+- **Monete arrivate da ricompense e staking** (B2): vendute senza un costo di
+  carico, restano fuori dal risultato.
 - **Conversione dei saldi piccoli.** Un'operazione dell'app (riferimento
   TS6V2XV-SA33Z-KBQJE4) ha venduto insieme 0,25 USDG e due residui di SOL ed
   ETH per 0,22 EUR. Non è una coppia spesa/incasso, quindi è ignorata: il log

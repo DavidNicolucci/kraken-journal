@@ -11,7 +11,9 @@ import java.time.Instant;
  *
  * @param giorni giorni interi fra apertura e chiusura, da confrontare con il
  *        time stop della guida.
- * @param investito quanto e' costata la posizione, commissioni comprese.
+ * @param investito quanto e' costata la quantita' chiusa, commissioni
+ *        comprese: la polvere rimasta passa al giro dopo. Null come il
+ *        risultato, quando un acquisto in un'altra valuta non ha un cambio.
  * @param risultato al netto delle commissioni. Null quando una parte e' stata
  *        venduta in una valuta diversa da quella di acquisto: senza un cambio
  *        il risultato non e' calcolabile, e non diventa zero.

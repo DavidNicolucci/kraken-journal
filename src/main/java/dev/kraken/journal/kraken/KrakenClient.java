@@ -9,6 +9,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 
 import org.slf4j.Logger;
@@ -51,6 +52,7 @@ public class KrakenClient {
     private final KrakenSigner signer;
     private final KrakenProperties properties;
     private final Duration attesaLimite;
+    private final ReentrantLock chiamatePrivate = new ReentrantLock();
 
     @Autowired
     public KrakenClient(RestClient krakenRestClient, KrakenSigner signer, KrakenProperties properties) {
@@ -140,8 +142,26 @@ public class KrakenClient {
         return List.copyOf(raccolte.values());
     }
 
+    /**
+     * Una chiamata privata alla volta, dal nonce alla risposta. Il nonce e'
+     * crescente, ma due richieste partite insieme (30 g e subito 1 anno nella
+     * pagina) possono arrivare a Kraken in ordine inverso: la seconda viene
+     * rifiutata con "EAPI:Invalid nonce", che non si ritenta. Il lucchetto e'
+     * un ReentrantLock e non synchronized, che bloccherebbe il thread virtuale
+     * durante la chiamata HTTP.
+     */
     private <T> T callPrivate(String path, Map<String, String> params,
                               ParameterizedTypeReference<KrakenEnvelope<T>> type) {
+        chiamatePrivate.lock();
+        try {
+            return chiamaUnaVolta(path, params, type);
+        } finally {
+            chiamatePrivate.unlock();
+        }
+    }
+
+    private <T> T chiamaUnaVolta(String path, Map<String, String> params,
+                                 ParameterizedTypeReference<KrakenEnvelope<T>> type) {
         long nonce = signer.nextNonce();
 
         Map<String, String> withNonce = new LinkedHashMap<>();

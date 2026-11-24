@@ -1,6 +1,7 @@
 package dev.kraken.journal.scansione;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -16,6 +17,7 @@ import java.util.function.IntToDoubleFunction;
 import org.junit.jupiter.api.Test;
 
 import dev.kraken.journal.kraken.KrakenApiException;
+import dev.kraken.journal.kraken.PairResolver;
 import dev.kraken.journal.mercato.Intervallo;
 import dev.kraken.journal.mercato.MercatoClient;
 import dev.kraken.journal.mercato.dto.Candela;
@@ -38,7 +40,7 @@ class ServizioScansioneTest {
         when(mercato.candeleChiuse(any(), any(Intervallo.class))).thenReturn(candeleInSalita());
 
         var proprieta = proprieta();
-        var risposta = new ServizioScansione(mercato, new ValutatoreSetup(proprieta), proprieta).scansiona();
+        var risposta = new ServizioScansione(mercato, new ValutatoreSetup(proprieta), proprieta, new PairResolver()).scansiona();
 
         assertEquals(3, risposta.inWatchlist());
         assertEquals(2, risposta.esaminate(), "solo la coppia tolta dal listino resta fuori");
@@ -84,7 +86,7 @@ class ServizioScansioneTest {
         when(mercato.quotazioni(List.of("XBTUSD")))
                 .thenReturn(Map.of("XXBTZUSD", quotazione("XXBTZUSD", ultimo)));
         when(mercato.candeleChiuse(any(), any(Intervallo.class))).thenReturn(candele);
-        return new ServizioScansione(mercato, new ValutatoreSetup(proprieta), proprieta)
+        return new ServizioScansione(mercato, new ValutatoreSetup(proprieta), proprieta, new PairResolver())
                 .scansiona().candidati().get(0);
     }
 
@@ -102,12 +104,27 @@ class ServizioScansioneTest {
         when(mercato.candeleChiuse(any(), any(Intervallo.class)))
                 .thenReturn(candeleCrollateDopoLaSalita());
 
-        Candidato candidato = new ServizioScansione(mercato, new ValutatoreSetup(proprieta), proprieta)
+        Candidato candidato = new ServizioScansione(mercato, new ValutatoreSetup(proprieta), proprieta, new PairResolver())
                 .scansiona().candidati().get(0);
 
         assertEquals(-38.5, candidato.indicatori().distanzaDallaMedia(), 0.1);
         assertEquals(Esito.BOCCIATO, esitoDi(candidato, Controllo.DISTANZA_DALLA_MEDIA),
                 "col segno questo controllo passava: -38,5 e' pur sempre <= 12");
+    }
+
+    /**
+     * AVAXEUR non e' nel listino: prima, togliendo tutte le X e le Z, riceveva
+     * la quotazione di AVAEUR. Il nome interno con i prefissi storici invece
+     * si trova ancora.
+     */
+    @Test
+    void unaCoppiaSimileNonPrestaLaSuaQuotazione() {
+        var proprieta = proprieta(List.of("AVAEUR", "AVAXEUR"));
+        var servizio = new ServizioScansione(mock(MercatoClient.class), new ValutatoreSetup(proprieta), proprieta,
+                new PairResolver());
+
+        assertNull(servizio.trovaQuotazione("AVAXEUR", Map.of("AVAEUR", quotazione("AVAEUR"))));
+        assertEquals("XXBTZUSD", servizio.trovaQuotazione("XBTUSD", Map.of("XXBTZUSD", quotazione("XXBTZUSD"))).coppia());
     }
 
     private static Quotazione quotazione(String nome) {

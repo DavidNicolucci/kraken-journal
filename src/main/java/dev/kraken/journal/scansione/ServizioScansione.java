@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import dev.kraken.journal.kraken.KrakenApiException;
+import dev.kraken.journal.kraken.PairResolver;
 import dev.kraken.journal.mercato.Intervallo;
 import dev.kraken.journal.mercato.MercatoClient;
 import dev.kraken.journal.mercato.dto.Quotazione;
@@ -45,12 +46,14 @@ public class ServizioScansione {
     private final MercatoClient mercatoClient;
     private final ValutatoreSetup valutatore;
     private final ProprietaScansione proprieta;
+    private final PairResolver pairResolver;
 
     public ServizioScansione(MercatoClient mercatoClient, ValutatoreSetup valutatore,
-                             ProprietaScansione proprieta) {
+                             ProprietaScansione proprieta, PairResolver pairResolver) {
         this.mercatoClient = mercatoClient;
         this.valutatore = valutatore;
         this.proprieta = proprieta;
+        this.pairResolver = pairResolver;
     }
 
     public RispostaScansione scansiona() {
@@ -141,18 +144,20 @@ public class ServizioScansione {
 
     /**
      * Kraken risponde con il nome interno della coppia, che non sempre coincide
-     * con quello richiesto: si chiede XBTUSD e torna XXBTZUSD.
+     * con quello richiesto: si chiede XBTUSD e torna XXBTZUSD. Il confronto
+     * passa da PairResolver, che toglie solo i prefissi storici: togliere
+     * tutte le X e le Z faceva di AVAXEUR la quotazione di AVAEUR.
      *
      * @return null se la coppia non c'e'.
      */
-    private static Quotazione trovaQuotazione(String coppia, Map<String, Quotazione> quotazioni) {
+    Quotazione trovaQuotazione(String coppia, Map<String, Quotazione> quotazioni) {
         Quotazione diretta = quotazioni.get(coppia);
         if (diretta != null) {
             return diretta;
         }
+        String cercata = pairResolver.resolve(coppia).display();
         return quotazioni.values().stream()
-                .filter(q -> q.coppia().replace("X", "").replace("Z", "")
-                        .equals(coppia.replace("X", "").replace("Z", "")))
+                .filter(q -> pairResolver.resolve(q.coppia()).display().equals(cercata))
                 .findFirst()
                 .orElse(null);
     }

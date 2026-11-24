@@ -258,13 +258,16 @@ considerano solo operativita' vera.
 due decimali diventava `0.00`, che si legge come prezzo zero. Sotto l'unita' si
 usano cifre significative.
 
-**Commissioni sul volume.** `feesToVolumePercent` sostituisce il rapporto
-fee/P&L come metrica principale sui costi: e' sempre calcolabile e non dipende
-dal costo di carico.
+**Commissioni sul volume.** `commissioniPercentuale`, per valuta in
+`totaliPerValuta` e per coppia in `feesToVolumePercent`, sostituisce il
+rapporto fee/P&L come metrica principale sui costi: e' sempre calcolabile e non
+dipende dal costo di carico.
 
-**Valute miste.** Quando le coppie hanno quote diverse (USD ed EUR), gli
-aggregati sommano importi in valute differenti. `mixedQuoteCurrencies` lo
-segnala; i numeri esatti, per valuta, sono in `totaliPerValuta`.
+**Valute miste.** Volumi, commissioni e risultato stanno solo in
+`totaliPerValuta`, una riga per valuta. I vecchi totali di `stats` che
+sommavano EUR e USD (`tradingVolumeQuote`, `totalFees`, `tradingFees`,
+`fxFees`, `feesToVolumePercent`, `realizedPnlComplete`) sono stati tolti.
+`mixedQuoteCurrencies` dice se le valute sono piu' d'una.
 
 **Storico completo e acquisti dall'app.** Il costo di carico si ricostruiva
 sui soli trade del periodo, quindi ogni posizione aperta prima della finestra
@@ -278,6 +281,18 @@ suo risultato anche se un'altra parte non ce l'ha.
 in piu' pezzi; i giorni attivi seguono il fuso del lavoro giornaliero
 (`giornaliero.fuso`) invece di UTC; un residuo sotto
 `journal.residuo-trascurabile` per cento non e' piu' una posizione aperta.
+La polvere resta nel carico, perche' le monete sono ancora sul conto: il suo
+costo esce dall'investito del giro chiuso e passa al giro successivo.
+
+**Chiamate private una alla volta.** Due journal chiesti insieme (30 g e subito
+1 anno) potevano arrivare a Kraken con i nonce in ordine inverso, e il secondo
+veniva rifiutato con `EAPI:Invalid nonce`. Ora `KrakenClient` fa una chiamata
+privata alla volta, e la pagina annulla la richiesta precedente quando cambi
+periodo.
+
+**Margine al 95%.** Il quantile della t di Student viene dalle tavole fino a 30
+gradi di liberta': l'approssimazione usata prima, con 2 o 3 operazioni chiuse,
+dava un margine fino al 44% piu' stretto del vero.
 
 **Stop a mercato.** Il rischio di un'operazione pagava lo stop alla tariffa
 dell'entrata, cioe' come ordine limite. Uno stop che scatta prende il prezzo

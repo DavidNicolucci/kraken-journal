@@ -31,7 +31,8 @@ public final class CalcolatoreIndicatori {
     private static final int PERIODO_RSI = 14;
     private static final int PERIODO_ATR = 14;
     /** Sotto questo numero di candele l'RSI di Wilder non e' ancora a regime. */
-    private static final int CANDELE_MINIME = 60;
+    /** Package: ProprietaScansione ci confronta i periodi della configurazione. */
+    static final int CANDELE_MINIME = 60;
 
     private CalcolatoreIndicatori() {
     }
@@ -110,7 +111,11 @@ public final class CalcolatoreIndicatori {
             guadagno = (guadagno * (periodo - 1) + Math.max(variazione, 0)) / periodo;
             perdita = (perdita * (periodo - 1) + Math.max(-variazione, 0)) / periodo;
         }
-        return perdita == 0 ? 100 : 100 - 100 / (1 + guadagno / perdita);
+        // Serie piatta: ne' guadagni ne' perdite, e' il centro della scala, non un ipercomprato.
+        if (perdita == 0) {
+            return guadagno == 0 ? 50 : 100;
+        }
+        return 100 - 100 / (1 + guadagno / perdita);
     }
 
     /** ATR di Wilder sul true range. */

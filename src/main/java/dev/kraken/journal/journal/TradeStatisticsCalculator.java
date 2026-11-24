@@ -66,7 +66,9 @@ import dev.kraken.journal.kraken.PairResolver;
  *
  * 7. Una posizione e' chiusa quando ne resta meno di
  *    {@code journal.residuo-trascurabile} per cento della quantita' massima
- *    tenuta. Il resto e' polvere, non una posizione aperta.
+ *    tenuta. Il resto e' polvere, non una posizione aperta: resta nel carico,
+ *    perche' le monete sono ancora sul conto, e il suo costo passa dal giro
+ *    chiuso al giro successivo.
  */
 @Component
 public class TradeStatisticsCalculator {
@@ -104,10 +106,10 @@ public class TradeStatisticsCalculator {
                 Moneta moneta = monete.computeIfAbsent(m.coppia().base(), k -> new Moneta(cambi));
                 vendita = moneta.applica(m);
                 if (moneta.chiusaDa(m)) {
+                    OperazioneChiusa chiusa = moneta.chiudi(m.istante());
                     if (!m.istante().isBefore(from)) {
-                        chiuse.add(moneta.giro.chiudi(m.istante()));
+                        chiuse.add(chiusa);
                     }
-                    moneta.giro = null;
                 }
             }
             if (m.istante().isBefore(from)) {
@@ -130,14 +132,7 @@ public class TradeStatisticsCalculator {
 
         int esecuzioniTrading = trading.stream().mapToInt(a -> a.esecuzioni).sum();
         int ordiniTrading = trading.stream().mapToInt(a -> a.ordini.size()).sum();
-        BigDecimal volume = somma(trading, a -> a.volume);
-        BigDecimal commissioni = somma(trading, a -> a.commissioni);
-        BigDecimal commissioniCambio = somma(coppie.values().stream().filter(a -> a.coppia.fxConversion()).toList(),
-                a -> a.commissioni);
-
         int incomplete = (int) tradingStats.stream().filter(p -> !p.pnlComplete()).count();
-        BigDecimal risultatoCompleto = tradingStats.stream().filter(PairStats::pnlComplete)
-                .map(PairStats::realizedPnl).reduce(BigDecimal.ZERO, BigDecimal::add);
 
         Set<String> valute = trading.stream().map(a -> a.coppia.quote()).collect(Collectors.toCollection(TreeSet::new));
 
@@ -150,12 +145,6 @@ public class TradeStatisticsCalculator {
                 giorniAttivi.isEmpty() ? BigDecimal.ZERO
                         : BigDecimal.valueOf(ordiniTrading).divide(BigDecimal.valueOf(giorniAttivi.size()), 2,
                                 RoundingMode.HALF_UP),
-                scaled(volume),
-                scaled(commissioni.add(commissioniCambio)),
-                scaled(commissioni),
-                scaled(commissioniCambio),
-                percentOf(commissioni, volume),
-                incomplete == tradingStats.size() && incomplete > 0 ? null : scaled(risultatoCompleto),
                 incomplete,
                 valute.size() > 1,
                 List.copyOf(valute),
@@ -275,15 +264,18 @@ public class TradeStatisticsCalculator {
         final Instant apertura;
         final String coppia;
         final String valuta;
-        BigDecimal investito = BigDecimal.ZERO;
+        /** Null appena entra un'altra valuta senza un cambio, come il risultato: un totale parziale sembrerebbe giusto. */
+        BigDecimal investito;
         /** Null appena entra un'altra valuta senza un cambio: i due risultati non si sommano. */
         BigDecimal risultato = BigDecimal.ZERO;
         BigDecimal massimo = BigDecimal.ZERO;
 
-        Giro(Instant apertura, PairResolver.Pair coppia) {
+        /** @param polvere il costo della polvere lasciata dal giro prima, che questo giro eredita. */
+        Giro(Instant apertura, PairResolver.Pair coppia, BigDecimal polvere) {
             this.apertura = apertura;
             this.coppia = coppia.display();
             this.valuta = coppia.quote();
+            this.investito = polvere;
         }
 
         OperazioneChiusa chiudi(Instant chiusura) {
@@ -305,17 +297,17 @@ public class TradeStatisticsCalculator {
         Vendita applica(Movimento m) {
             String valuta = m.coppia().quote();
             if (m.acquisto()) {
+                if (giro == null) {
+                    giro = new Giro(m.istante(), m.coppia(), costoIn(valuta, m.istante()).orElse(null));
+                }
                 Carico carico = carichi.computeIfAbsent(valuta, k -> new Carico());
                 BigDecimal costo = m.controvalore().add(m.commissione());
                 carico.quantita = carico.quantita.add(m.quantita());
                 carico.costo = carico.costo.add(costo);
-                if (giro == null) {
-                    giro = new Giro(m.istante(), m.coppia());
-                }
                 Optional<BigDecimal> cambio = cambi.tasso(valuta, giro.valuta, m.istante());
-                if (cambio.isPresent()) {
-                    giro.investito = giro.investito.add(costo.multiply(cambio.get(), MC));
-                } else {
+                giro.investito = cambio.isPresent() && giro.investito != null
+                        ? giro.investito.add(costo.multiply(cambio.get(), MC)) : null;
+                if (cambio.isEmpty()) {
                     giro.risultato = null;
                 }
                 giro.massimo = giro.massimo.max(totale());
@@ -337,6 +329,34 @@ public class TradeStatisticsCalculator {
         boolean chiusaDa(Movimento m) {
             return !m.acquisto() && giro != null
                     && totale().compareTo(giro.massimo.multiply(proprieta.residuoTrascurabile()).divide(CENTO, MC)) <= 0;
+        }
+
+        /**
+         * Chiude il giro. La polvere non e' stata venduta in questo giro: il
+         * suo costo esce dall'investito, cosi' investito e risultato parlano
+         * della stessa quantita', e il giro dopo lo ritrova nel carico.
+         */
+        OperazioneChiusa chiudi(Instant quando) {
+            Optional<BigDecimal> polvere = costoIn(giro.valuta, quando);
+            giro.investito = giro.investito != null && polvere.isPresent() ? giro.investito.subtract(polvere.get()) : null;
+            OperazioneChiusa chiusa = giro.chiudi(quando);
+            giro = null;
+            return chiusa;
+        }
+
+        /** Il costo di quello che resta nel carico, in una valuta; vuoto se manca un cambio. */
+        private Optional<BigDecimal> costoIn(String valuta, Instant quando) {
+            BigDecimal totale = BigDecimal.ZERO;
+            for (var voce : carichi.entrySet()) {
+                if (voce.getValue().costo.signum() != 0) {
+                    Optional<BigDecimal> cambio = cambi.tasso(voce.getKey(), valuta, quando);
+                    if (cambio.isEmpty()) {
+                        return Optional.empty();
+                    }
+                    totale = totale.add(voce.getValue().costo.multiply(cambio.get(), MC));
+                }
+            }
+            return Optional.of(totale);
         }
 
         /**

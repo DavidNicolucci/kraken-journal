@@ -443,7 +443,9 @@ function render(j) {
         <td>${data(o.apertura)}</td>
         <td>${data(o.chiusura)}</td>
         <td>${o.giorni}</td>
-        <td>${num(o.investito)} <span style="color:var(--ink-soft)">${esc(o.valuta)}</span></td>
+        <td>${o.investito === null || o.investito === undefined
+              ? `<span class="na" title="Un acquisto è in un'altra valuta, senza un cambio">non calcolabile</span>`
+              : `${num(o.investito)} <span style="color:var(--ink-soft)">${esc(o.valuta)}</span>`}</td>
         <td>${o.risultato === null || o.risultato === undefined
               ? `<span class="na" title="Una parte è stata comprata o venduta in un'altra valuta">non calcolabile</span>`
               : `<span class="${classeSegno(o.risultato)}">${segno(o.risultato)}</span>`}</td>
@@ -499,16 +501,21 @@ function render(j) {
   </footer>`;
 }
 
+/** La richiesta in corso: un clic su un altro periodo la annulla, cosi' una risposta lenta non copre quella scelta. */
+let richiesta = null;
+
 async function load(days) {
+  richiesta?.abort();
+  const { signal } = richiesta = new AbortController();
   out.innerHTML = `<div class="state">Carico il registro…</div>`;
   try {
-    const [res, resTariffe] = await Promise.all([fetch(`/api/journal?days=${days}`), fetch('/api/tariffe')]);
+    const [res, resTariffe] = await Promise.all([fetch(`/api/journal?days=${days}`, { signal }), fetch('/api/tariffe', { signal })]);
     if (!res.ok) throw new Error(`Il server ha risposto ${res.status}. Controlla la console di IntelliJ.`);
     if (!resTariffe.ok) throw new Error(`Tariffe non disponibili: il server ha risposto ${resTariffe.status}.`);
     tariffe = await resTariffe.json();
     render(await res.json());
   } catch (e) {
-    out.innerHTML = `<div class="state error">${esc(e.message)}</div>`;
+    if (e.name !== 'AbortError') out.innerHTML = `<div class="state error">${esc(e.message)}</div>`;
   }
 }
 

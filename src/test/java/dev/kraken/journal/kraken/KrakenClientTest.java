@@ -5,13 +5,18 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.mock.http.client.MockClientHttpResponse;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
@@ -52,6 +57,42 @@ class KrakenClientTest {
         assertEquals(1, trade.size());
         assertNotEquals(firme.get(0), firme.get(1), "un nonce riusato verrebbe rifiutato da Kraken");
         server.verify();
+    }
+
+    /**
+     * Due journal chiesti insieme (30 g e subito 1 anno): le chiamate private
+     * devono arrivare a Kraken una alla volta, altrimenti la seconda puo'
+     * superare la prima e il suo nonce piu' basso viene rifiutato.
+     */
+    @Test
+    void leChiamatePrivateNonSiSovrappongono() throws Exception {
+        AtomicInteger inCorso = new AtomicInteger();
+        AtomicInteger massimo = new AtomicInteger();
+        RestClient restClient = RestClient.builder().baseUrl("https://api.kraken.com")
+                .requestInterceptor((richiesta, corpo, esecuzione) -> {
+                    massimo.accumulateAndGet(inCorso.incrementAndGet(), Math::max);
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    inCorso.decrementAndGet();
+                    var risposta = new MockClientHttpResponse(UN_TRADE.getBytes(StandardCharsets.UTF_8), HttpStatus.OK);
+                    risposta.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+                    return risposta;
+                })
+                .build();
+        var proprieta = new KrakenProperties("https://api.kraken.com", "chiave", SEGRETO);
+        var client = new KrakenClient(restClient, new KrakenSigner(proprieta), proprieta, Duration.ZERO);
+
+        try (var esecutore = Executors.newFixedThreadPool(2)) {
+            var primo = esecutore.submit(() -> client.fetchTrades(Instant.EPOCH, Instant.parse("2026-09-24T00:00:00Z")));
+            var secondo = esecutore.submit(() -> client.fetchTrades(Instant.EPOCH, Instant.parse("2026-09-24T00:00:00Z")));
+            primo.get();
+            secondo.get();
+        }
+
+        assertEquals(1, massimo.get());
     }
 
     private static final String UNA_RIGA_DEL_LEDGER = """
