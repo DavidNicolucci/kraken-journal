@@ -1,5 +1,7 @@
 package dev.kraken.journal.giornaliero;
 
+import java.util.Map;
+
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -24,5 +26,15 @@ public class GiornalieroController {
     @PostMapping
     public EsitoLavoro esegui() {
         return lavoro.esegui();
+    }
+
+    /**
+     * Solo la chiusura delle operazioni risolte, senza scansione. Era in
+     * /api/registro: e' passata qui perche' ora legge anche gli ordini su
+     * Kraken, che il registro da solo non conosce.
+     */
+    @PostMapping("/risoluzione")
+    public Map<String, Integer> risolvi() {
+        return Map.of("chiuse", lavoro.risolvi());
     }
 }

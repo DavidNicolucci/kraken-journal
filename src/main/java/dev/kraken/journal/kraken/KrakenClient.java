@@ -73,12 +73,13 @@ public class KrakenClient {
      * I risultati arrivano dal piu' recente al piu' vecchio: li riordino
      * cronologicamente perche' il journal ragiona in avanti nel tempo.
      */
-    public List<KrakenTrade> fetchTrades(Instant from, Instant to) {
-        List<KrakenTrade> trade = new ArrayList<>(scaricaPagine(TRADES_HISTORY, Map.of("trades", "true"), from, to,
-                new ParameterizedTypeReference<KrakenEnvelope<TradesHistoryResult>>() {}, TradesHistoryResult::trades));
+    public Storico<KrakenTrade> fetchTrades(Instant from, Instant to) {
+        Storico<KrakenTrade> scaricati = scaricaPagine(TRADES_HISTORY, Map.of("trades", "true"), from, to,
+                new ParameterizedTypeReference<KrakenEnvelope<TradesHistoryResult>>() {}, TradesHistoryResult::trades);
+        List<KrakenTrade> trade = new ArrayList<>(scaricati.voci());
         trade.sort(Comparator.comparing(KrakenTrade::timestamp));
         log.info("Recuperati {} trade da Kraken tra {} e {}", trade.size(), from, to);
-        return trade;
+        return new Storico<>(List.copyOf(trade), scaricati.completo());
     }
 
     /**
@@ -88,10 +89,10 @@ public class KrakenClient {
      * lettura. Senza, Kraken risponde con un errore e chi chiama decide come
      * farne a meno.
      */
-    public List<KrakenLedgerEntry> fetchLedger(Instant from, Instant to) {
-        List<KrakenLedgerEntry> righe = scaricaPagine(LEDGERS, Map.of(), from, to,
+    public Storico<KrakenLedgerEntry> fetchLedger(Instant from, Instant to) {
+        Storico<KrakenLedgerEntry> righe = scaricaPagine(LEDGERS, Map.of(), from, to,
                 new ParameterizedTypeReference<KrakenEnvelope<LedgersResult>>() {}, LedgersResult::ledger);
-        log.info("Recuperate {} righe del ledger da Kraken tra {} e {}", righe.size(), from, to);
+        log.info("Recuperate {} righe del ledger da Kraken tra {} e {}", righe.voci().size(), from, to);
         return righe;
     }
 
@@ -104,7 +105,7 @@ public class KrakenClient {
      * due volte. Per il ledger Kraken preferisce ormai lo scorrimento a cursore;
      * "ofs" resta valido ed e' quello gia' in uso per i trade.
      */
-    private <R, T> List<T> scaricaPagine(String percorso, Map<String, String> filtri, Instant from, Instant to,
+    private <R, T> Storico<T> scaricaPagine(String percorso, Map<String, String> filtri, Instant from, Instant to,
                                          ParameterizedTypeReference<KrakenEnvelope<R>> tipo,
                                          Function<R, Map<String, T>> voci) {
         Map<String, T> raccolte = new LinkedHashMap<>();
@@ -139,7 +140,7 @@ public class KrakenClient {
             log.warn("{}: raggiunto il tetto di {} pagine, il journal usa solo le {} voci piu' recenti",
                     percorso, MAX_PAGES, raccolte.size());
         }
-        return List.copyOf(raccolte.values());
+        return new Storico<>(List.copyOf(raccolte.values()), completo);
     }
 
     /**

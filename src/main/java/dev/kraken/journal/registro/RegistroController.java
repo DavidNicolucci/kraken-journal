@@ -6,6 +6,7 @@ import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -17,6 +18,7 @@ import dev.kraken.journal.registro.dto.OperazioneInRegistro;
 import dev.kraken.journal.registro.dto.StatisticheRegistro;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 
 @RestController
 @RequestMapping("/api/registro")
@@ -44,10 +46,18 @@ public class RegistroController {
         return servizio.statistiche();
     }
 
-    /** Da chiamare una volta al giorno, dopo la chiusura delle candele. */
-    @PostMapping("/risoluzione")
-    public Map<String, Integer> risolvi() {
-        return Map.of("chiuse", servizio.risolviAperte());
+    /**
+     * La chiusura a mano di un'operazione reale, quando gli ordini su Kraken
+     * non bastano a chiuderla da soli: venduta in un'altra valuta, ledger non
+     * leggibile.
+     */
+    @PostMapping("/{id}/chiusura")
+    public OperazioneInRegistro chiudi(@PathVariable long id, @Valid @RequestBody ChiusuraAMano chiusura) {
+        return OperazioneInRegistro.da(servizio.chiudiAMano(id, chiusura.prezzoUscita()));
+    }
+
+    /** @param prezzoUscita il prezzo medio a cui si e' venduto. */
+    public record ChiusuraAMano(@Positive double prezzoUscita) {
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

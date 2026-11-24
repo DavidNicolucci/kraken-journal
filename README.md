@@ -21,12 +21,11 @@ Kraken TradesHistory + Ledgers  ->  StoriaOperazioni  ->  TradeStatisticsCalcula
 Il commento applica le regole di `docs/regole-commento-journal.md`, ciascuna
 con il suo test: stessi dati, stesso testo. Non fa previsioni di prezzo e non
 da' indicazioni operative. Fino al 23/11/2026 lo scriveva Claude; quella
-versione e' nel tag `versione-con-ai`.
+versione e' nella storia di git.
 
 ## Setup
 
 1. Su Kraken: Settings -> API -> Add key, con **solo** questi permessi:
-   - Query Funds
    - Query Closed Orders & Trades
    - Query Ledger Entries: serve a leggere gli acquisti fatti dall'app Kraken,
      che non compaiono fra i trade. Senza, il journal funziona lo stesso ma
@@ -80,7 +79,10 @@ mesi fa. Oltre alle metriche per coppia, la risposta contiene:
 - `operazioniChiuse`: i giri completi chiusi nel periodo, dalla prima entrata a
   quando della moneta resta solo polvere;
 - `posizioniAperte`: quello che e' in carico adesso, con il suo costo;
-- `ledgerLetto`: `false` se la chiave non ha il permesso sul ledger.
+- `ledgerLetto`: `false` se la chiave non ha il permesso sul ledger;
+- `storicoCompleto`: `false` se Kraken si e' fermato al tetto di 2.000 voci
+  (40 pagine): le vendite di monete comprate prima risultano senza costo di
+  carico, e il commento lo dice.
 
 Vedi le sezioni piu' sotto per i limiti del P&L.
 
@@ -90,12 +92,15 @@ Il calcolatore "Prima di entrare". Dati capitale, rischio percentuale, verso
 (`ACQUISTO` o scoperto), entrata, stop, obiettivo facoltativo e commissioni in
 percentuale (`0.40`, non `0.004`), restituisce:
 
-- quantita' e controvalore per rischiare esattamente la quota scelta;
-- commissioni in entrata e in uscita, e prezzo di pareggio;
+- quantita' e controvalore per rischiare esattamente la quota scelta. Lo stop
+  esce sempre a mercato, come nella scansione: la commissione d'uscita scelta
+  vale per l'obiettivo e il pareggio, e stessa operazione vuol dire stessa
+  quantita' nelle due pagine;
+- commissioni in entrata e allo stop, e prezzo di pareggio;
 - guadagno, rapporto rischio/rendimento e percentuale di successo minima,
   solo se l'obiettivo e' indicato: senza obiettivo il rapporto non viene inventato;
-- tre avvisi: controvalore oltre il capitale, pareggio piu' lontano dello stop,
-  commissioni oltre il 25% del rischio.
+- tre avvisi: controvalore piu' commissione d'entrata oltre il capitale,
+  pareggio piu' lontano dello stop, commissioni oltre il 25% del rischio.
 
 Uno stop dalla parte sbagliata dell'entrata restituisce `400` con il motivo.
 
@@ -112,6 +117,7 @@ indicatori sulle candele giornaliere chiuse e applica i controlli, in ordine:
 | `BREAKOUT` | il trigger: chiusura sopra il massimo dei `giorni-breakout` giorni prima, con controvalore almeno `multiplo-volume-breakout` volte la loro media |
 | `MOMENTO` | RSI a 14 fra `rsi-minimo` e `rsi-massimo` |
 | `DISTANZA_DALLA_MEDIA` | prezzo non oltre `distanza-massima-dalla-media` % dalla media |
+| `PREZZO_ATTUALE` | il prezzo di stamattina conferma la chiusura di ieri: sopra media e rottura, entro la stessa distanza dalla media |
 | `AMPIEZZA_STOP` | stop fra `ampiezza-stop-minima` e `ampiezza-stop-massima` % |
 | `RESISTENZA_INTERMEDIA` | il massimo dei 30 giorni prima della rottura non sta fra entrata e obiettivo |
 
@@ -124,7 +130,8 @@ Per ogni coppia propone anche un piano:
 
 Per impostazione predefinita restituisce anche le coppie bocciate, con il
 controllo che le ha fermate: sapere perche' una coppia non passa e' piu' utile
-di una lista corta.
+di una lista corta. Le soglie si confrontano con il valore mostrato, arrotondato
+come lo si legge: un RSI di 49,96 si legge 50,0 e passa "fra 50 e 70".
 
 ### Registro — `/api/registro`
 
@@ -133,17 +140,35 @@ di una lista corta.
 | `POST` | `/api/registro` | registra un'operazione |
 | `GET` | `/api/registro` | elenca tutte le operazioni |
 | `GET` | `/api/registro/statistiche` | esiti e, per ogni regola su carta e reale, risultato medio in R con margine d'errore |
-| `POST` | `/api/registro/risoluzione` | chiude le operazioni aperte leggendo le candele |
+| `POST` | `/api/registro/{id}/chiusura` | chiude a mano un'operazione reale: `{"prezzoUscita": 70.5}` |
+| `POST` | `/api/giornaliero/risoluzione` | chiude le operazioni risolte (era `/api/registro/risoluzione`) |
 
 Coppia, trigger (`BREAKOUT_20_GIORNI`, `PULLBACK_MEDIA`, `MANUALE`), entrata,
 stop, obiettivo e motivo sono obbligatori: si scrivono **prima** di aprire.
-`reale` e' `false` per le operazioni su carta.
+`reale` e' `false` per le operazioni su carta; un'operazione reale ha anche la
+quantita', e oltre `posizioni-massime` posizioni reali aperte viene rifiutata.
+La coppia si puo' scrivere come si vuole (XBTEUR, XBT/EUR, BTC/EUR): nel
+registro finisce col nome della watchlist. Il rapporto lo calcola il registro,
+e con esso la tariffa dell'operazione, che resta quella anche se poi cambi
+`tipo-ordine`.
 
-La risoluzione legge solo le candele chiuse successive alla registrazione e
-chiude allo stop, all'obiettivo o per tempo, dopo `giorni-time-stop` giorni.
-Se nella stessa candela vengono toccati sia lo stop sia l'obiettivo, vince
-**sempre lo stop**: la candela giornaliera non dice quale sia arrivato prima,
-e la lettura pessimistica impedisce al registro di autoassolversi.
+**Le analisi su carta** si chiudono sulle candele chiuse successive alla
+registrazione: allo stop, all'obiettivo o per tempo, dopo `giorni-time-stop`
+giorni pieni, alla chiusura dell'ultimo. Il giorno di registrazione si legge
+sulle candele orarie (Kraken ne tiene trenta giorni): un minimo fatto prima
+dell'entrata non e' uno stop, un obiettivo toccato nel pomeriggio conta. Se in
+una stessa candela vengono toccati sia lo stop sia l'obiettivo, vince **sempre
+lo stop**: la candela non dice quale sia arrivato prima, e la lettura
+pessimistica impedisce al registro di autoassolversi.
+
+**Le operazioni reali** si chiudono dagli ordini veri letti da Kraken, non da
+una simulazione: l'operazione e' il giro che contiene il primo acquisto sulla
+moneta nei tre giorni dopo la registrazione, e l'R e' il suo risultato diviso
+il rischio pianificato. Il prezzo medio di uscita dice lo stato: obiettivo,
+stop o "a mano" se in mezzo. Senza nessun acquisto in quei giorni
+l'operazione e' "mai eseguita" e libera il suo posto. Quando Kraken non basta
+(venduta in un'altra valuta, ledger non leggibile) si chiude a mano, anche
+dalla pagina della scansione.
 
 Il risultato e' espresso in R, dove 1 R e' la perdita reale allo stop,
 commissioni comprese e con lo stop eseguito a mercato. Essendo gia' al netto
@@ -156,7 +181,8 @@ non per concludere.
 
 ### Lavoro giornaliero — ogni giorno alle 7:00 (Europe/Rome)
 
-1. Risolve le operazioni aperte, cosi' il registro e' aggiornato.
+1. Risolve le operazioni aperte, la carta sulle candele e le reali dagli
+   ordini su Kraken, cosi' il registro e' aggiornato.
 2. Esegue la scansione e prende le coppie che superano tutti i controlli.
 3. Le registra tutte **su carta**, saltando le coppie con un'operazione gia' aperta.
 4. Indica la prima coppia per rotazione, quella registrata meno volte, come
@@ -170,8 +196,12 @@ in qualunque stagione.
 Se il computer era spento alle 7:00, il lavoro si avvia a mano:
 
 ```bash
-curl -X POST http://localhost:8080/api/giornaliero
+curl -X POST -H "X-Journal: 1" http://localhost:8080/api/giornaliero
 ```
+
+Ogni `POST` vuole l'header `X-Journal`: le pagine dell'app lo mettono, una
+pagina di un altro sito aperta nello stesso browser non puo' farlo senza un
+permesso che il server non da'. Senza, il server risponde `403`.
 
 Le coppie gia' aperte non vengono registrate due volte.
 

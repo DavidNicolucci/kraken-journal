@@ -67,8 +67,10 @@ public class StoriaOperazioni {
                     .values().forEach(righe -> daApp(righe, movimenti, arrivi));
             ledger.forEach(riga -> provenienza(riga).ifPresent(p -> annota(arrivi, riga.asset(), p)));
         }
-        movimenti.sort(Comparator.comparing(Movimento::istante));
-        return new Storia(List.copyOf(movimenti), arrivi, ledger != null);
+        // A parita' di istante l'acquisto viene prima: una vendita messa davanti
+        // risulterebbe senza costo di carico.
+        movimenti.sort(Comparator.comparing(Movimento::istante).thenComparing(m -> !m.acquisto()));
+        return new Storia(List.copyOf(movimenti), arrivi, ledger != null, true);
     }
 
     /**

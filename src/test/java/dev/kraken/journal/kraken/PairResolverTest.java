@@ -2,6 +2,7 @@ package dev.kraken.journal.kraken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -58,5 +59,18 @@ class PairResolverTest {
         assertFalse(p.fxConversion());
         assertTrue(resolver.coppia("ZEUR", "ZUSD").fxConversion());
         assertEquals("SOL", resolver.asset("SOL.F"));
+    }
+
+    @Test
+    void ilNomePerIlRegistroEQuelloDellaWatchlist() {
+        assertEquals("XBTEUR", resolver.altname("XBT/EUR"));
+        assertEquals("XBTEUR", resolver.altname("btc/eur"));
+        assertEquals("XBTEUR", resolver.altname("XXBTZEUR"));
+        assertEquals("XDGEUR", resolver.altname("DOGE/EUR"));
+        assertEquals("ZECEUR", resolver.altname("XZECZEUR"));
+        assertEquals("XTZEUR", resolver.altname(" XTZEUR "));
+        assertNull(resolver.altname("XBTEUR&interval=60"));
+        assertNull(resolver.altname("PIPPO"));
+        assertNull(resolver.altname(""));
     }
 }

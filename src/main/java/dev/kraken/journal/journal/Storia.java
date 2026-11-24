@@ -15,6 +15,14 @@ import java.util.Set;
  * @param ledgerLetto false se Kraken non ha fatto leggere il ledger: in quel
  *        caso mancano le operazioni fatte dall'app e gli arrivi, e chi mostra i
  *        numeri deve dirlo.
+ * @param completa false se trade o ledger si sono fermati al tetto di pagine:
+ *        mancano le operazioni piu' vecchie.
  */
-public record Storia(List<Movimento> movimenti, Map<String, Set<Provenienza>> arrivi, boolean ledgerLetto) {
+public record Storia(List<Movimento> movimenti, Map<String, Set<Provenienza>> arrivi, boolean ledgerLetto,
+                     boolean completa) {
+
+    /** La stessa storia, segnata come incompleta. */
+    public Storia troncata() {
+        return new Storia(movimenti, arrivi, ledgerLetto, false);
+    }
 }

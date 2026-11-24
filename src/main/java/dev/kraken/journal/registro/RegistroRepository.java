@@ -6,7 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface RegistroRepository extends JpaRepository<OperazioneRegistrata, Long> {
 
-    List<OperazioneRegistrata> findByStato(StatoOperazione stato);
+    List<OperazioneRegistrata> findByStatoAndReale(StatoOperazione stato, boolean reale);
 
     List<OperazioneRegistrata> findAllByOrderByDataRegistrazioneDesc();
 

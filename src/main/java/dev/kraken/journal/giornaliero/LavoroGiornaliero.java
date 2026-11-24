@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import dev.kraken.journal.journal.TradingJournalService;
 import dev.kraken.journal.registro.ServizioRegistro;
 import dev.kraken.journal.registro.Trigger;
 import dev.kraken.journal.registro.dto.NuovaOperazione;
@@ -45,12 +46,14 @@ public class LavoroGiornaliero {
 
     private final ServizioScansione servizioScansione;
     private final ServizioRegistro servizioRegistro;
+    private final TradingJournalService journal;
     private final ProprietaScansione proprieta;
 
     public LavoroGiornaliero(ServizioScansione servizioScansione, ServizioRegistro servizioRegistro,
-                             ProprietaScansione proprieta) {
+                             TradingJournalService journal, ProprietaScansione proprieta) {
         this.servizioScansione = servizioScansione;
         this.servizioRegistro = servizioRegistro;
+        this.journal = journal;
         this.proprieta = proprieta;
     }
 
@@ -64,8 +67,16 @@ public class LavoroGiornaliero {
         esegui();
     }
 
+    /**
+     * Chiude quello che si e' risolto: la carta sulle candele, le operazioni
+     * reali dagli ordini letti da Kraken.
+     */
+    public int risolvi() {
+        return servizioRegistro.risolviAperte() + journal.chiudiOperazioniReali();
+    }
+
     public EsitoLavoro esegui() {
-        int chiuse = servizioRegistro.risolviAperte();
+        int chiuse = risolvi();
 
         // Ordinate per rotazione: prima le coppie su cui si e' operato meno.
         // Chi esce per primo e' la candidata da prendere per davvero, se c'e'
@@ -95,7 +106,6 @@ public class LavoroGiornaliero {
     private static NuovaOperazione daCandidato(Candidato c) {
         return new NuovaOperazione(c.coppia(), Trigger.BREAKOUT_20_GIORNI,
                 c.piano().entrata(), c.piano().stop(), c.piano().obiettivo(), c.piano().quantita(),
-                c.piano().rapporto(),
                 "Scansione automatica: tutti i controlli superati. RSI "
                         + String.format(java.util.Locale.ITALY, "%.1f", c.indicatori().rsi14())
                         + ", distanza dalla media "

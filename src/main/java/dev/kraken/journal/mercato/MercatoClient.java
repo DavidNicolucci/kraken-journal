@@ -2,8 +2,6 @@ package dev.kraken.journal.mercato;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -56,11 +54,16 @@ public class MercatoClient {
     private final Duration attesaLimite;
     /** Vale per tutti i chiamanti, non solo per la scansione: il limite e' per indirizzo. */
     private final Semaphore permessi = new Semaphore(CHIAMATE_CONTEMPORANEE);
-    /** Le candele giornaliere cambiano una volta al giorno: riscaricarle a ogni
+    /** Le candele chiuse cambiano una volta per intervallo: riscaricarle a ogni
      *  scansione e' l'unico spreco vero di questo modulo. */
     private final Map<ChiaveCache, List<Candela>> cache = new ConcurrentHashMap<>();
 
-    private record ChiaveCache(String coppia, Intervallo intervallo, LocalDate giorno) {}
+    /**
+     * @param periodo quanti intervalli sono passati dal 1970: cambia quando si
+     *        chiude una candela nuova. Col giorno al posto del periodo, le
+     *        candele orarie restavano vecchie fino a ventiquattro ore.
+     */
+    private record ChiaveCache(String coppia, Intervallo intervallo, long periodo) {}
 
     @Autowired
     public MercatoClient(RestClient krakenRestClient) {
@@ -84,13 +87,16 @@ public class MercatoClient {
      * esplicitamente con un altro nome.
      */
     public List<Candela> candeleChiuse(String coppia, Intervallo intervallo) {
-        ChiaveCache chiave = new ChiaveCache(coppia, intervallo, LocalDate.now(ZoneOffset.UTC));
+        ChiaveCache chiave = new ChiaveCache(coppia, intervallo,
+                Instant.now().getEpochSecond() / (intervallo.minuti() * 60L));
         List<Candela> inCache = cache.get(chiave);
         if (inCache != null) {
             return inCache;
         }
         List<Candela> candele = scarica(coppia, intervallo);
-        cache.keySet().removeIf(k -> !k.giorno().equals(chiave.giorno()));
+        // Due chiamate a cavallo della chiusura possono togliersi le voci a
+        // vicenda: costa al massimo uno scaricamento in piu', mai dati vecchi.
+        cache.keySet().removeIf(k -> k.intervallo() == intervallo && k.periodo() != chiave.periodo());
         cache.put(chiave, candele);
         return candele;
     }

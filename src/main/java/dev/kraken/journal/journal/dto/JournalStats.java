@@ -21,6 +21,9 @@ import java.util.List;
  *        {@code totaliPerValuta}, una riga per valuta: i totali che sommavano
  *        EUR e USD sono stati tolti, perche' un numero sbagliato con l'aria
  *        giusta e' peggio di nessun numero.
+ * @param storicoCompleto false se Kraken ha restituito solo le voci piu'
+ *        recenti (tetto di pagine raggiunto): le vendite di monete comprate
+ *        prima risultano senza costo di carico.
  * @param ledgerLetto false se la chiave non ha potuto leggere il ledger:
  *        mancano le operazioni fatte dall'app.
  * @param ordini gli ordini del periodo, conversioni comprese.
@@ -41,6 +44,7 @@ public record JournalStats(
         List<String> quoteCurrencies,
         List<PairStats> byPair,
         boolean ledgerLetto,
+        boolean storicoCompleto,
         List<Ordine> ordini,
         List<TotaliValuta> totaliPerValuta,
         List<OperazioneChiusa> operazioniChiuse,

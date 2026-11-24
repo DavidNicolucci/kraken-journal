@@ -280,7 +280,7 @@ class GeneratoreCommentoTest {
     @Test
     void d3_pareggio() {
         registro.add(new OperazioneRegistrata("SOLEUR", Trigger.BREAKOUT_20_GIORNI, 100, 94, 112, 0.2, 2,
-                "rottura", true, Instant.parse("2026-11-28T07:00:00Z")));
+                "rottura", true, Instant.parse("2026-11-28T07:00:00Z"), TipoOrdine.LIMITE));
         ordine("SOLEUR", "buy", "20.00", "0.16", "0.2", "2026-11-28T10:00:00Z", false);
         assertEquals("Con commissioni medie dello 0,80% per lato, il prezzo deve salire almeno dell'1,61% "
                 + "solo per chiudere in pari.", voce(commento(), "Con commissioni medie"));
@@ -309,17 +309,80 @@ class GeneratoreCommentoTest {
     @Test
     void e8_acquistoRegistratoPrima() {
         registro.add(new OperazioneRegistrata("SOLEUR", Trigger.BREAKOUT_20_GIORNI, 100, 94, 112, 0.3, 2,
-                "rottura", true, Instant.parse("2026-11-20T07:00:00Z")));
+                "rottura", true, Instant.parse("2026-11-20T07:00:00Z"), TipoOrdine.LIMITE));
         compra("SOLEUR", "30.00", "0.3", "2026-11-20T10:00:00Z");
         assertTrue(nessunaVoce(commento(), "nel registro"));
+    }
+
+    private void registraReale(String coppia, double quantita, String quando) {
+        registro.add(new OperazioneRegistrata(coppia, Trigger.BREAKOUT_20_GIORNI, 100, 94, 112, quantita, 2,
+                "rottura", true, Instant.parse(quando), TipoOrdine.LIMITE));
+    }
+
+    /** Un'operazione eseguita in due ordini e' coperta per intero. */
+    @Test
+    void e8_unaRegistrazioneCopreLaSuaQuantitaAnchePiuOrdini() {
+        registraReale("SOL/EUR", 0.3, "2026-11-20T07:00:00Z");
+        compra("SOLEUR", "20.00", "0.2", "2026-11-20T10:00:00Z");
+        compra("SOLEUR", "10.00", "0.1", "2026-11-20T11:00:00Z");
+        assertTrue(nessunaVoce(commento(), "nel registro"));
+    }
+
+    /** Riempita la quantita' registrata, un altro acquisto nei giorni dopo non e' coperto. */
+    @Test
+    void e8_dopoAverRiempitoLaRegistrazioneUnAltroAcquistoNo() {
+        registraReale("SOLEUR", 0.3, "2026-11-20T07:00:00Z");
+        compra("SOLEUR", "30.00", "0.3", "2026-11-20T10:00:00Z");
+        compra("SOLEUR", "30.00", "0.3", "2026-11-21T10:00:00Z");
+        assertEquals("1 acquisto su 2 non ha un'operazione reale nel registro: SOL/EUR del 21 novembre 2026.",
+                voce(commento(), "1 acquisto su 2"));
+    }
+
+    /** BTC/EUR nel registro e' la XBT/EUR degli ordini; la stessa moneta in un'altra valuta no. */
+    @Test
+    void e8_laCoppiaRegistrataVieneRiconosciutaAncheConIlNomeComune() {
+        registraReale("BTC/EUR", 0.001, "2026-11-20T07:00:00Z");
+        compra("XXBTZEUR", "90.00", "0.001", "2026-11-20T10:00:00Z");
+        compra("XBTUSD", "100.00", "0.001", "2026-11-20T11:00:00Z");
+        assertEquals("1 acquisto su 2 non ha un'operazione reale nel registro: XBT/USD del 20 novembre 2026.",
+                voce(commento(), "1 acquisto su 2"));
     }
 
     @Test
     void e9_dimensioneOltreIlMetodo() {
         compra("SOLEUR", "60.00", "0.6", "2026-11-20T10:00:00Z");
-        String voce = voce(commento(), "1 acquisto supera");
-        assertEquals("1 acquisto supera i 33 EUR, la dimensione più alta che il metodo consente con il rischio "
-                + "dell'1% e lo stop più stretto ammesso (5%): SOL/EUR per 60,00 EUR.", voce);
+        String voce = voce(commento(), "1 posizione supera");
+        assertEquals("1 posizione supera i 33 EUR, la dimensione più alta che il metodo consente con il rischio "
+                + "dell'1% e lo stop più stretto ammesso (5%): SOL/EUR per 60,24 EUR.", voce);
+    }
+
+    /** Due acquisti da 25 EUR passavano uno per uno: insieme sono una posizione da 50. */
+    @Test
+    void e9_contaLaPosizioneNonIlSingoloOrdine() {
+        compra("SOLEUR", "25.00", "0.25", "2026-11-20T10:00:00Z");
+        compra("SOLEUR", "25.00", "0.25", "2026-11-21T10:00:00Z");
+        vendi("SOLEUR", "52.00", "0.5", "2026-11-23T10:00:00Z");
+        assertTrue(voce(commento(), "1 posizione supera").endsWith("SOL/EUR per 50,20 EUR."));
+    }
+
+    /** Una posizione aperta prima del metodo e ancora aperta dopo occupa un posto lo stesso. */
+    @Test
+    void e10_contaAncheLePosizioniApertePrimaDelMetodo() {
+        metodoDal = LocalDate.of(2026, 11, 10);
+        compra("SOLEUR", "30.00", "0.3", "2026-11-01T10:00:00Z");
+        compra("XBTEUR", "30.00", "0.0003", "2026-11-12T10:00:00Z");
+        compra("ETHEUR", "30.00", "0.01", "2026-11-13T10:00:00Z");
+        assertEquals("Nel periodo hai tenuto fino a 3 posizioni aperte insieme: la guida ne prevede al massimo 2.",
+                voce(commento(), "Nel periodo hai tenuto"));
+    }
+
+    /** Quindici giorni e un'ora sono il sedicesimo giorno: oltre il time stop di 15. */
+    @Test
+    void e7_unaFrazioneDiGiornoOltreIlLimiteConta() {
+        compra("SOLEUR", "30.00", "0.3", "2026-11-02T10:00:00Z");
+        vendi("SOLEUR", "33.00", "0.3", "2026-11-17T11:00:00Z");
+        assertEquals("1 operazione è durata più dei 15 giorni del time stop: SOL/EUR (16 giorni).",
+                voce(commento(), "1 operazione è durata"));
     }
 
     @Test

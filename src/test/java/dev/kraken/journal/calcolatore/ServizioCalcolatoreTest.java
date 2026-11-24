@@ -18,8 +18,11 @@ import dev.kraken.journal.scansione.Verso;
  * modificato qualcosa che doveva restare identico.
  *
  * Caso noto: HYPE/EUR, entrata 72,00, stop 68,00, obiettivo 79,98, capitale
- * 203 EUR, rischio 1%, ordini limite su entrambi i lati. La pagina rispondeva
- * quantita' 0,445175, pareggio 72,58, rapporto 1,62 a 1.
+ * 203 EUR, rischio 1%, ordini limite in entrata e all'obiettivo. La pagina
+ * rispondeva quantita' 0,445175 e rapporto 1,62 a 1, pagando lo stop a
+ * limite. Lo stop esce a mercato: quantita' 0,420116, la stessa della
+ * scansione (ValutatoreSetupTest), e rapporto 1,53. Il pareggio, 72,58, non
+ * cambia: e' all'obiettivo.
  */
 class ServizioCalcolatoreTest {
 
@@ -29,11 +32,11 @@ class ServizioCalcolatoreTest {
     void riproduceINumeriDellaPagina() {
         EsitoValutazione e = servizio.valuta(acquisto(72.00, 68.00, 79.98));
 
-        assertEquals(0.445175, e.quantita(), 0.000001);
+        assertEquals(0.420116, e.quantita(), 0.000001);
         assertEquals(72.578313, e.pareggio(), 0.00001);
-        assertEquals(1.616684, e.rapporto(), 0.00001);
+        assertEquals(7.37208 / 4.832, e.rapporto(), 0.00001);
         assertEquals(2.03, e.rischioAmmesso(), 0.0001);
-        assertEquals(4.56, e.perditaPerUnita(), 0.0001);
+        assertEquals(4.832, e.perditaPerUnita(), 0.0001, "4 di distanza, 0,40% su 72 e 0,80% su 68");
     }
 
     @Test
@@ -42,7 +45,7 @@ class ServizioCalcolatoreTest {
 
         assertNull(e.rapporto(), "non calcolabile e vale zero sono due cose diverse");
         assertNull(e.guadagnoAllObiettivo());
-        assertEquals(0.445175, e.quantita(), 0.000001, "la quantita' si calcola lo stesso");
+        assertEquals(0.420116, e.quantita(), 0.000001, "la quantita' si calcola lo stesso");
     }
 
     @Test
@@ -50,9 +53,9 @@ class ServizioCalcolatoreTest {
         EsitoValutazione e = servizio.valuta(new RichiestaValutazione(
                 203, 1, Verso.VENDITA_ALLO_SCOPERTO, 100, 105, 90, 0.40, 0.40));
 
-        assertEquals(5.82, e.perditaPerUnita(), 0.000001, "5 di distanza piu' le due commissioni");
+        assertEquals(6.24, e.perditaPerUnita(), 0.000001, "5 di distanza, 0,40% su 100 e lo stop a mercato su 105");
         assertEquals(99.203187, e.pareggio(), 0.00001, "vendendo si pareggia sotto l'entrata");
-        assertEquals(9.24 / 5.82, e.rapporto(), 0.000001);
+        assertEquals(9.24 / 6.24, e.rapporto(), 0.000001);
         assertTrue(e.pareggio() < 100);
     }
 
@@ -67,6 +70,18 @@ class ServizioCalcolatoreTest {
                 "se ogni unita' costa di piu', a parita' di rischio se ne comprano meno");
     }
 
+    /** La stessa operazione deve dare la stessa quantita' qui e nella scansione, qualunque uscita si scelga. */
+    @Test
+    void lUscitaSceltaNonCambiaLoStop() {
+        EsitoValutazione aLimite = servizio.valuta(acquisto(72.00, 68.00, 79.98));
+        EsitoValutazione aMercato = servizio.valuta(new RichiestaValutazione(
+                203, 1, Verso.ACQUISTO, 72, 68, 79.98, 0.40, 0.80));
+
+        assertEquals(aMercato.quantita(), aLimite.quantita(), 0.0000001);
+        assertEquals(aMercato.commissioneInUscitaAlloStop(), aLimite.commissioneInUscitaAlloStop(), 0.0000001);
+        assertTrue(aLimite.rapporto() > aMercato.rapporto(), "all'obiettivo l'ordine limite costa meno");
+    }
+
     @Test
     void loStopDallaParteSbagliataVieneRifiutato() {
         var errore = assertThrows(IllegalArgumentException.class,
@@ -76,9 +91,22 @@ class ServizioCalcolatoreTest {
 
     @Test
     void segnalaQuandoLaPosizioneNonStaNelCapitale() {
-        // Stop vicinissimo: la quantita' corretta vale 225 EUR contro 203 di capitale.
+        // Stop vicinissimo e entrata senza commissione: la quantita' corretta vale 225 EUR contro 203 di capitale.
         EsitoValutazione e = servizio.valuta(new RichiestaValutazione(
-                203, 1, Verso.ACQUISTO, 100, 99.9, 110, 0.40, 0.40));
+                203, 1, Verso.ACQUISTO, 100, 99.9, 110, 0, 0.40));
+        assertTrue(e.capitaleSuperato());
+    }
+
+    /**
+     * Senza leva si paga anche la commissione d'entrata: rischio 2%, perdita
+     * per unita' 2,008, posizione da 202,19 EUR piu' 1,62 di commissione non
+     * stanno in 203.
+     */
+    @Test
+    void ilCapitaleComprendeLaCommissioneDEntrata() {
+        EsitoValutazione e = servizio.valuta(new RichiestaValutazione(
+                203, 2, Verso.ACQUISTO, 100, 99.5887, 110, 0.80, 0.40));
+        assertTrue(e.controvalore() < 203);
         assertTrue(e.capitaleSuperato());
     }
 

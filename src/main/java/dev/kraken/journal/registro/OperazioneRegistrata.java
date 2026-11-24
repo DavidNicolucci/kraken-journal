@@ -11,6 +11,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
+import dev.kraken.journal.scansione.TipoOrdine;
+
 /**
  * Un'operazione scritta nel registro PRIMA di essere aperta.
  *
@@ -43,7 +45,7 @@ public class OperazioneRegistrata {
     private Instant dataRegistrazione;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = ColonneDiTesto.ENUM)
     private Trigger trigger;
 
     @Column(nullable = false)
@@ -64,13 +66,22 @@ public class OperazioneRegistrata {
     private String motivo;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = ColonneDiTesto.ENUM)
     private StatoOperazione stato = StatoOperazione.APERTA;
 
     @Column(nullable = false)
     private boolean reale;
 
     private Instant dataChiusura;
+
+    /**
+     * La tariffa dell'entrata e dell'obiettivo al momento della registrazione:
+     * l'esito si calcola con quella, anche se nel frattempo la configurazione
+     * cambia. Null sulle righe scritte prima che ci fosse.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(columnDefinition = ColonneDiTesto.ENUM)
+    private TipoOrdine tipoOrdine;
 
     private Double prezzoUscita;
 
@@ -81,7 +92,7 @@ public class OperazioneRegistrata {
 
     public OperazioneRegistrata(String coppia, Trigger trigger, double entrata, double stop,
                                 double obiettivo, double quantita, double rapporto,
-                                String motivo, boolean reale, Instant dataRegistrazione) {
+                                String motivo, boolean reale, Instant dataRegistrazione, TipoOrdine tipoOrdine) {
         this.coppia = coppia;
         this.trigger = trigger;
         this.entrata = entrata;
@@ -92,17 +103,29 @@ public class OperazioneRegistrata {
         this.motivo = motivo;
         this.reale = reale;
         this.dataRegistrazione = dataRegistrazione;
+        this.tipoOrdine = tipoOrdine;
     }
 
     /** Scrive l'esito. Una volta chiusa, un'operazione non si riapre. */
     public void chiudi(StatoOperazione esito, Instant quando, double prezzoUscita, double risultatoInR) {
-        if (this.stato.chiusa()) {
-            throw new IllegalStateException("Operazione " + id + " gia' chiusa come " + this.stato);
-        }
+        aperta();
         this.stato = esito;
         this.dataChiusura = quando;
         this.prezzoUscita = prezzoUscita;
         this.risultatoInR = risultatoInR;
+    }
+
+    /** Un'operazione reale che non e' mai stata aperta: nessun acquisto nei giorni dopo la registrazione. */
+    public void nonEseguita(Instant quando) {
+        aperta();
+        this.stato = StatoOperazione.NON_ESEGUITA;
+        this.dataChiusura = quando;
+    }
+
+    private void aperta() {
+        if (this.stato != StatoOperazione.APERTA) {
+            throw new IllegalStateException("Operazione " + id + " gia' chiusa come " + this.stato);
+        }
     }
 
     public Long id() { return id; }
@@ -120,4 +143,5 @@ public class OperazioneRegistrata {
     public Instant dataChiusura() { return dataChiusura; }
     public Double prezzoUscita() { return prezzoUscita; }
     public Double risultatoInR() { return risultatoInR; }
+    public TipoOrdine tipoOrdine() { return tipoOrdine; }
 }

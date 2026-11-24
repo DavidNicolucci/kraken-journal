@@ -21,14 +21,18 @@ import dev.kraken.journal.scansione.TipoOrdine;
  * misurazione smette di servire a qualcosa.
  *
  * Vengono usate solo candele chiuse, e solo quelle che finiscono dopo la
- * registrazione. La candela del giorno di registrazione conta, ma a meta':
- * - lo stop si': il pomeriggio di quel giorno e' gia' operazione, e scartare
- *   la candela intera significava non vedere uno stop toccato poche ore dopo
- *   l'entrata. Il minimo puo' anche essere delle ore prima della
- *   registrazione: la candela non lo dice, e si assume il peggio;
+ * registrazione. Il giorno di registrazione si legge sulle candele orarie,
+ * quando ci sono tutte fino a fine giornata (Kraken ne tiene trenta giorni):
+ * cosi' un minimo toccato alle cinque non chiude un'operazione registrata
+ * alle sette, e un obiettivo toccato nel pomeriggio conta. Dentro l'ora di
+ * registrazione vale la stessa prudenza che vale altrimenti per il giorno:
+ * - lo stop si': non si sa se il minimo e' venuto prima o dopo l'entrata, e
+ *   si assume il peggio;
  * - l'obiettivo no: il massimo potrebbe essere stato fatto prima
  *   dell'entrata, e contarlo sarebbe la lettura ottimistica.
- * Il time stop conta invece solo i giorni pieni successivi.
+ * Senza le orarie, la stessa regola si applica alla candela del giorno.
+ * Il time stop conta solo i giorni pieni successivi, ed esce alla chiusura
+ * dell'ultimo: la data di chiusura e' la fine di quella candela.
  *
  * Se una candela apre gia' sotto lo stop, l'uscita e' l'apertura e non lo
  * stop: nel salto non c'e' nessun prezzo a cui lo stop si sarebbe riempito.
@@ -41,6 +45,7 @@ public final class RisolutoreOperazione {
 
     /** Il registro ragiona su candele giornaliere, come il time stop. */
     private static final Duration DURATA_CANDELA = Duration.ofDays(1);
+    private static final Duration DURATA_ORA = Duration.ofHours(1);
 
     private RisolutoreOperazione() {
     }
@@ -50,38 +55,64 @@ public final class RisolutoreOperazione {
     }
 
     /**
+     * @param giornaliere candele chiuse, dalla piu' vecchia.
+     * @param orarie candele orarie chiuse, dalla piu' vecchia: servono solo per
+     *        il giorno di registrazione, e possono mancare.
      * @return la chiusura, oppure null se l'operazione e' ancora aperta.
      */
-    public static Chiusura risolvi(OperazioneRegistrata operazione, List<Candela> candele,
+    public static Chiusura risolvi(OperazioneRegistrata operazione, List<Candela> giornaliere, List<Candela> orarie,
                                    int giorniTimeStop, TipoOrdine tipoOrdine) {
         Instant registrazione = operazione.dataRegistrazione();
         int giorniPieni = 0;
 
-        for (Candela candela : candele) {
-            if (!candela.istante().plus(DURATA_CANDELA).isAfter(registrazione)) {
+        for (Candela candela : giornaliere) {
+            Instant fine = candela.istante().plus(DURATA_CANDELA);
+            if (!fine.isAfter(registrazione)) {
                 continue;
             }
-            boolean diRegistrazione = !candela.istante().isAfter(registrazione);
+            if (!candela.istante().isAfter(registrazione)) {
+                List<Candela> ore = orarie.stream()
+                        .filter(o -> o.istante().plus(DURATA_ORA).isAfter(registrazione) && o.istante().isBefore(fine))
+                        .toList();
+                boolean complete = !ore.isEmpty() && !ore.get(ore.size() - 1).istante().plus(DURATA_ORA).isBefore(fine);
+                Chiusura chiusura = complete
+                        ? candeleDopo(operazione, ore, registrazione, tipoOrdine)
+                        : candeleDopo(operazione, List.of(candela), registrazione, tipoOrdine);
+                if (chiusura != null) {
+                    return chiusura;
+                }
+                continue;
+            }
+            Chiusura chiusura = candeleDopo(operazione, List.of(candela), registrazione, tipoOrdine);
+            if (chiusura != null) {
+                return chiusura;
+            }
+            if (++giorniPieni >= giorniTimeStop) {
+                return chiusura(StatoOperazione.CHIUSA_PER_TEMPO, operazione, fine, candela.chiusura(), tipoOrdine);
+            }
+        }
+        return null;
+    }
 
+    /**
+     * Stop e obiettivo su una serie di candele. Quella che contiene la
+     * registrazione conta solo per lo stop, e all'apertura non c'e' salto:
+     * l'apertura precede l'entrata.
+     */
+    private static Chiusura candeleDopo(OperazioneRegistrata operazione, List<Candela> candele,
+                                        Instant registrazione, TipoOrdine tipoOrdine) {
+        for (Candela candela : candele) {
+            boolean diRegistrazione = !candela.istante().isAfter(registrazione);
             if (candela.minimo() <= operazione.stop()) {
-                // Nella candela di registrazione l'apertura precede l'entrata:
-                // non puo' essere un salto oltre lo stop.
                 double uscita = diRegistrazione
                         ? operazione.stop()
                         : Math.min(candela.apertura(), operazione.stop());
                 return chiusura(StatoOperazione.CHIUSA_ALLO_STOP, operazione,
                         diRegistrazione ? registrazione : candela.istante(), uscita, tipoOrdine);
             }
-            if (diRegistrazione) {
-                continue;
-            }
-            if (candela.massimo() >= operazione.obiettivo()) {
+            if (!diRegistrazione && candela.massimo() >= operazione.obiettivo()) {
                 return chiusura(StatoOperazione.CHIUSA_ALL_OBIETTIVO, operazione, candela.istante(),
                         operazione.obiettivo(), tipoOrdine);
-            }
-            if (++giorniPieni >= giorniTimeStop) {
-                return chiusura(StatoOperazione.CHIUSA_PER_TEMPO, operazione, candela.istante(),
-                        candela.chiusura(), tipoOrdine);
             }
         }
         return null;

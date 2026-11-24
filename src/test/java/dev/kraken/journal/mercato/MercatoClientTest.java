@@ -61,6 +61,28 @@ class MercatoClientTest {
         server.verify();
     }
 
+    /**
+     * La cache vale per intervallo: la seconda richiesta giornaliera non
+     * riscarica, la richiesta oraria della stessa coppia si'. Con la sola data
+     * nella chiave le orarie sarebbero rimaste vecchie per tutto il giorno.
+     */
+    @Test
+    void laCacheTieneSeparatiGliIntervalli() {
+        RestClient.Builder costruttore = RestClient.builder().baseUrl("https://api.kraken.com");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(costruttore).build();
+        server.expect(requestTo(Matchers.containsString("interval=1440")))
+                .andRespond(withSuccess(TRE_CANDELE, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(Matchers.containsString("interval=60")))
+                .andRespond(withSuccess(TRE_CANDELE, MediaType.APPLICATION_JSON));
+        MercatoClient client = new MercatoClient(costruttore.build());
+
+        client.candeleChiuse("XBTUSD", Intervallo.GIORNALIERO);
+        client.candeleChiuse("XBTUSD", Intervallo.GIORNALIERO);
+        client.candeleChiuse("XBTUSD", Intervallo.ORA);
+
+        server.verify();
+    }
+
     @Test
     void ilControvaloreUsaIlPrezzoMedioNonLaChiusura() {
         Candela candela = new Candela(java.time.Instant.EPOCH, 100, 110, 90, 105, 102, 10);

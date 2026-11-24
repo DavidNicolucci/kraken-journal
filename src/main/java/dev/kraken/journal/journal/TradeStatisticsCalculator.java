@@ -150,6 +150,7 @@ public class TradeStatisticsCalculator {
                 List.copyOf(valute),
                 pairStats,
                 storia.ledgerLetto(),
+                storia.completa(),
                 ordini.values().stream().map(TradeStatisticsCalculator::ordine).toList(),
                 valute.stream().map(v -> totali(v, trading.stream().filter(a -> a.coppia.quote().equals(v)).toList()))
                         .toList(),
@@ -269,6 +270,11 @@ public class TradeStatisticsCalculator {
         /** Null appena entra un'altra valuta senza un cambio: i due risultati non si sommano. */
         BigDecimal risultato = BigDecimal.ZERO;
         BigDecimal massimo = BigDecimal.ZERO;
+        /** Il costo piu' alto tenuto insieme: la dimensione vera della posizione, anche se comprata in piu' volte. */
+        BigDecimal costoMassimo = BigDecimal.ZERO;
+        BigDecimal venduta = BigDecimal.ZERO;
+        /** Il lordo delle vendite nella valuta del giro: diviso per la quantita', il prezzo medio di uscita. */
+        BigDecimal incassato = BigDecimal.ZERO;
 
         /** @param polvere il costo della polvere lasciata dal giro prima, che questo giro eredita. */
         Giro(Instant apertura, PairResolver.Pair coppia, BigDecimal polvere) {
@@ -280,7 +286,9 @@ public class TradeStatisticsCalculator {
 
         OperazioneChiusa chiudi(Instant chiusura) {
             return new OperazioneChiusa(coppia, valuta, apertura, chiusura,
-                    Duration.between(apertura, chiusura).toDays(), scaled(investito), scaled(risultato));
+                    Duration.between(apertura, chiusura).toDays(), scaled(investito), scaled(risultato),
+                    scaled(costoMassimo), incassato == null || venduta.signum() == 0
+                            ? null : scaled(incassato.divide(venduta, MC)));
         }
     }
 
@@ -311,6 +319,7 @@ public class TradeStatisticsCalculator {
                     giro.risultato = null;
                 }
                 giro.massimo = giro.massimo.max(totale());
+                costoIn(giro.valuta, m.istante()).ifPresent(tenuto -> giro.costoMassimo = giro.costoMassimo.max(tenuto));
                 return Vendita.NESSUNA;
             }
             Vendita vendita = vendi(m);
@@ -321,6 +330,9 @@ public class TradeStatisticsCalculator {
                 } else if (giro.risultato != null && vendita.realizzato() != null) {
                     giro.risultato = giro.risultato.add(vendita.realizzato().multiply(cambio.get(), MC));
                 }
+                giro.venduta = giro.venduta.add(m.quantita());
+                giro.incassato = cambio.isPresent() && giro.incassato != null
+                        ? giro.incassato.add(m.controvalore().multiply(cambio.get(), MC)) : null;
             }
             return vendita;
         }

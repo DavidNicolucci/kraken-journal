@@ -16,6 +16,14 @@ import jakarta.validation.constraints.Size;
  * quello in cui si sta agendo di fretta, e in quel momento un campo
  * obbligatorio e' l'unica cosa che regge.
  *
+ * Il rapporto non si manda: lo calcola il registro da entrata, stop e
+ * obiettivo, come la scansione. Un valore scritto dal chiamante poteva non
+ * avere niente a che fare con i tre prezzi accanto.
+ *
+ * @param coppia come la si scrive: XBTEUR, XBT/EUR o BTC/EUR finiscono tutte
+ *        nel registro come XBTEUR, il nome della watchlist.
+ * @param quantita obbligatoria per un'operazione reale: e' quella con cui si
+ *        calcola il rischio, e quindi il risultato in R.
  * @param reale false per la carta. Predefinito, e va lasciato tale finche' il
  *        trigger non ha abbastanza registrazioni alle spalle.
  */
@@ -26,7 +34,6 @@ public record NuovaOperazione(
         @Positive double stop,
         @Positive double obiettivo,
         @PositiveOrZero double quantita,
-        double rapporto,
         @NotBlank @Size(max = 1000) String motivo,
         boolean reale) {
 }

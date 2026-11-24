@@ -1,6 +1,8 @@
 package dev.kraken.journal.kraken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -54,7 +56,8 @@ class KrakenClientTest {
 
         var trade = client.fetchTrades(Instant.parse("2026-09-01T00:00:00Z"), Instant.parse("2026-09-24T00:00:00Z"));
 
-        assertEquals(1, trade.size());
+        assertEquals(1, trade.voci().size());
+        assertTrue(trade.completo());
         assertNotEquals(firme.get(0), firme.get(1), "un nonce riusato verrebbe rifiutato da Kraken");
         server.verify();
     }
@@ -95,6 +98,15 @@ class KrakenClientTest {
         assertEquals(1, massimo.get());
     }
 
+    /** Un log.info delle proprieta' non deve stampare chiave e segreto. */
+    @Test
+    void leProprietaNonMostranoChiaveESegreto() {
+        String testo = new KrakenProperties(null, "chiave-vera", SEGRETO).toString();
+
+        assertFalse(testo.contains("chiave-vera") || testo.contains(SEGRETO), testo);
+        assertTrue(testo.contains("https://api.kraken.com"));
+    }
+
     private static final String UNA_RIGA_DEL_LEDGER = """
             {"error":[],"result":{"count":1,"ledger":{"L1":{
               "refid":"TAPP1","time":1758153600.5,"type":"receive","subtype":"","aclass":"currency",
@@ -121,8 +133,8 @@ class KrakenClientTest {
         Instant da = Instant.EPOCH;
         Instant a = Instant.parse("2026-09-24T00:00:00Z");
 
-        var ledger = client.fetchLedger(da, a);
-        var trade = client.fetchTrades(da, a);
+        var ledger = client.fetchLedger(da, a).voci();
+        var trade = client.fetchTrades(da, a).voci();
 
         assertEquals(1, ledger.size());
         assertEquals("receive", ledger.get(0).type());

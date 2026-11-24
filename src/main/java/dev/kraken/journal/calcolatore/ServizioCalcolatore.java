@@ -19,6 +19,12 @@ import dev.kraken.journal.scansione.Verso;
  * Differenza dalla scansione: qui l'obiettivo lo sceglie chi usa la pagina e
  * puo' mancare, ed e' ammessa la vendita allo scoperto. La scansione invece
  * costruisce l'obiettivo a 2 R e tratta solo acquisti.
+ *
+ * Come nella scansione, lo stop esce sempre a mercato
+ * ({@link MatematicaOperazione#USCITA_FORZATA}): la commissione d'uscita
+ * scelta nella pagina vale per l'obiettivo e il pareggio. Prima valeva anche
+ * allo stop, e con l'uscita a limite la quantita' superava del 6% il rischio
+ * ammesso.
  */
 @Service
 public class ServizioCalcolatore {
@@ -36,14 +42,15 @@ public class ServizioCalcolatore {
         double stop = richiesta.stop();
         double cIn = richiesta.commissioneEntrataFrazione();
         double cOut = richiesta.commissioneUscitaFrazione();
+        double cStop = MatematicaOperazione.USCITA_FORZATA.commissione();
 
         double rischioAmmesso = richiesta.capitale() * richiesta.rischioPercentuale() / 100;
-        double perditaPerUnita = MatematicaOperazione.rischioPerUnita(entrata, stop, cIn, cOut);
+        double perditaPerUnita = MatematicaOperazione.rischioPerUnita(entrata, stop, cIn, cStop);
         double quantita = perditaPerUnita > 0 ? rischioAmmesso / perditaPerUnita : 0;
         double controvalore = quantita * entrata;
 
         double commissioneInEntrata = controvalore * cIn;
-        double commissioneInUscita = quantita * stop * cOut;
+        double commissioneInUscita = quantita * stop * cStop;
         double pareggio = MatematicaOperazione.pareggio(entrata, richiesta.verso(), cIn, cOut);
 
         double distanza = Math.abs(entrata - stop);
@@ -72,7 +79,7 @@ public class ServizioCalcolatore {
                 rischioAmmesso, distanza, distanzaPercentuale, perditaPerUnita, quantita, controvalore,
                 commissioneInEntrata, commissioneInUscita, commissioniTotali,
                 pareggio, pareggioPercentuale, guadagno, rapporto, percentualeMinima,
-                controvalore > richiesta.capitale(),
+                controvalore + commissioneInEntrata > richiesta.capitale(),
                 pareggioPercentuale >= distanzaPercentuale,
                 rischioAmmesso > 0 && commissioniTotali > rischioAmmesso * QUOTA_COMMISSIONI_PESANTI,
                 obiettivoNonCopreICosti);

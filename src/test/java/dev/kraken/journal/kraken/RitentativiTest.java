@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.web.client.ResourceAccessException;
 
 class RitentativiTest {
 
@@ -37,6 +38,19 @@ class RitentativiTest {
 
         assertEquals("ok", esito);
         assertEquals(3, chiamate.get());
+    }
+
+    /** Un timeout o una connessione chiusa passano: la chiamata e' di sola lettura. */
+    @Test
+    void ritentaUnErroreDiRete() {
+        AtomicInteger chiamate = new AtomicInteger();
+
+        String esito = Ritentativi.conRitentativi("prova", Duration.ZERO, () -> {
+            if (chiamate.incrementAndGet() < 2) throw new ResourceAccessException("Read timed out");
+            return "ok";
+        });
+
+        assertEquals("ok", esito);
     }
 
     @Test

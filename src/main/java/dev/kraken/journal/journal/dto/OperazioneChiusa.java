@@ -17,6 +17,11 @@ import java.time.Instant;
  * @param risultato al netto delle commissioni. Null quando una parte e' stata
  *        venduta in una valuta diversa da quella di acquisto: senza un cambio
  *        il risultato non e' calcolabile, e non diventa zero.
+ * @param costoMassimo il costo piu' alto tenuto insieme durante il giro: la
+ *        dimensione della posizione, anche se costruita con piu' acquisti.
+ * @param prezzoMedioUscita il lordo delle vendite diviso la quantita' venduta,
+ *        nella valuta del giro. Serve a chiudere un'operazione reale del
+ *        registro: dice se si e' usciti allo stop, all'obiettivo o in mezzo.
  */
 public record OperazioneChiusa(
         String coppia,
@@ -25,5 +30,7 @@ public record OperazioneChiusa(
         Instant chiusura,
         long giorni,
         BigDecimal investito,
-        BigDecimal risultato) {
+        BigDecimal risultato,
+        BigDecimal costoMassimo,
+        BigDecimal prezzoMedioUscita) {
 }

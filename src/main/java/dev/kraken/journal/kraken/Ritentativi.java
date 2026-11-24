@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 
 /**
  * Ritenta una chiamata a Kraken quando l'errore e' temporaneo, aspettando ogni
@@ -46,10 +47,16 @@ public final class Ritentativi {
         }
     }
 
+    /**
+     * Anche un errore di rete (timeout, connessione chiusa, DNS) e' temporaneo:
+     * le chiamate sono tutte di sola lettura, e ogni tentativo privato ha un
+     * nonce nuovo, quindi ripeterle non fa danni.
+     */
     private static boolean temporaneo(RuntimeException e) {
         return (e instanceof KrakenApiException k && k.temporanea())
                 || e instanceof HttpClientErrorException.TooManyRequests
-                || e instanceof HttpServerErrorException;
+                || e instanceof HttpServerErrorException
+                || e instanceof ResourceAccessException;
     }
 
     private static void dormi(Duration attesa) {

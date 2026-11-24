@@ -109,8 +109,9 @@ table{margin-top:4px}
         <select id="feeIn"></select>
       </div>
       <div class="field">
-        <label for="feeOut">Commissione in uscita</label>
+        <label for="feeOut">Commissione all'obiettivo</label>
         <select id="feeOut"></select>
+        <p class="hint">Lo stop esce sempre a mercato: il prezzo non lo scegli tu.</p>
       </div>
     </div>
   </section>
@@ -154,6 +155,9 @@ table{margin-top:4px}
    Adesso i numeri arrivano da POST /api/valutazione. Qui restano solo la
    formattazione, il disegno dell'asse e i testi. */
 const $ = id => document.getElementById(id);
+/* Il messaggio d'errore del server ripete i numeri scritti nei campi: passa di qui prima di finire in innerHTML. */
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ids = ['capitale','rischio','entrata','stop','target','feeIn','feeOut'];
 let verso = 'ACQUISTO';
 let richiestaInCorso = null;
@@ -208,13 +212,13 @@ async function chiedi(){
   try {
     const risposta = await fetch('/api/valutazione', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: {'Content-Type': 'application/json', 'X-Journal': '1'},
       body: JSON.stringify(v),
       signal: richiestaInCorso.signal
     });
     if (!risposta.ok) {
       const corpo = await risposta.json().catch(() => ({}));
-      svuota(`<p class="flag"><b>Numeri rifiutati dal server</b>${corpo.errore || 'Controlla i campi.'}</p>`);
+      svuota(`<p class="flag"><b>Numeri rifiutati dal server</b>${esc(corpo.errore || 'Controlla i campi.')}</p>`);
       return;
     }
     mostra(v, await risposta.json());
@@ -317,7 +321,7 @@ function mostra(v, e){
       <tr><td>Perdita per unità</td><td>distanza + commissioni sui due lati</td><td>${prz(e.perditaPerUnita)}</td></tr>
       <tr><td>Quantità</td><td>${fmt(e.rischioAmmesso,2)} &divide; ${prz(e.perditaPerUnita)}</td><td>${qta(e.quantita)}</td></tr>
       <tr><td>Commissione in entrata</td><td>${fmt(e.controvalore)} &times; ${pct(v.commissioneEntrata)}</td><td>${fmt(e.commissioneInEntrata,3)}</td></tr>
-      <tr><td>Commissione in uscita allo stop</td><td>${fmt(e.quantita*v.stop)} &times; ${pct(v.commissioneUscita)}</td><td>${fmt(e.commissioneInUscitaAlloStop,3)}</td></tr>
+      <tr><td>Commissione in uscita allo stop, a mercato</td><td>${fmt(e.quantita*v.stop)} &times; ${pct(tariffe.MERCATO)}</td><td>${fmt(e.commissioneInUscitaAlloStop,3)}</td></tr>
       <tr><td>Prezzo di pareggio</td><td>${acquisto
           ? `${prz(v.entrata)} &times; (1 + ${pct(v.commissioneEntrata)}) &divide; (1 &minus; ${pct(v.commissioneUscita)})`
           : `${prz(v.entrata)} &times; (1 &minus; ${pct(v.commissioneEntrata)}) &divide; (1 + ${pct(v.commissioneUscita)})`}</td><td>${prz(e.pareggio)}</td></tr>
@@ -328,10 +332,12 @@ function mostra(v, e){
    journal e in Java, e al primo cambio di livello si sarebbero aggiornate in
    un posto solo. Si parte da "a mercato" su entrambi i lati, il caso peggiore. */
 const NOMI_ORDINI = {LIMITE:'ordine limite', MERCATO:'ordine a mercato'};
+/** Serve anche al dettaglio dei conti: lo stop paga sempre la tariffa a mercato. */
+let tariffe = {};
 async function caricaTariffe(){
   const risposta = await fetch('/api/tariffe');
   if (!risposta.ok) throw new Error('il server ha risposto ' + risposta.status);
-  const tariffe = await risposta.json();
+  tariffe = await risposta.json();
   const opzioni = Object.entries(tariffe).map(([tipo, p]) =>
     `<option value="${p}"${tipo === 'MERCATO' ? ' selected' : ''}>${pct(p)} — ${NOMI_ORDINI[tipo] || tipo}</option>`).join('');
   $('feeIn').innerHTML = opzioni;

@@ -85,6 +85,7 @@ lo spread dell'app non è visibile da nessuna parte.
 | `posizioniAperte` | posizioni in carico adesso: coppia, quantità, costo di carico, aperta dal |
 | `byPair` | per coppia: ordini, operazioni dall'app, volume, commissioni, risultato (anche parziale), quantità scoperta e sua provenienza, quantità venduta in un'altra valuta (convertita o senza cambio) |
 | `ledgerLetto` | se la chiave ha potuto leggere il ledger |
+| `storicoCompleto` | se Kraken ha restituito tutto lo storico o si è fermato al tetto di pagine |
 | `tradingDays`, `fxConversions` | giorni con ordini e conversioni valutarie (il loro costo è nelle coppie di cambio di `byPair`) |
 | **dalla configurazione esistente** | `scansione.watchlist`, `registrazioni-per-giudizio` (15), `giorni-time-stop` (15), `capitale` (203), `rischio-per-operazione` (1%), `ampiezza-stop-minima` (5%), `posizioni-massime` (2), `tipo-ordine`, `giornaliero.fuso` |
 | **dal codice esistente** | `TipoOrdine` (0,40% / 0,80%), `MatematicaOperazione` (pareggio, rischio per unità), `PairResolver` (moneta di una coppia) |
@@ -200,6 +201,15 @@ più di 5 regole, restano fuori le ultime.
   quello mostrato: oltre alla commissione c'è lo spread, che sta dentro il
   prezzo e Kraken non riporta."
 
+#### B7 — Storico troncato (dopo la revisione del 24/11)
+- **Quando:** Kraken si è fermato al tetto di 40 pagine (2.000 voci) su trade o
+  ledger (`stats.storicoCompleto = false`). Viene subito dopo B0.
+- **Testo:** "Lo storico scaricato da Kraken si ferma alle voci più recenti: le
+  vendite di monete comprate prima risultano senza costo di carico, anche se un
+  acquisto c'è stato."
+- **Perché:** prima il troncamento finiva solo nel log, e le vendite vecchie
+  comparivano in B2 con una provenienza sbagliata.
+
 #### B6 — Metodo di calcolo (sempre, in fondo)
 - **Quando:** sempre, se c'è almeno un ordine di trading.
 - **Testo:** "Il risultato è calcolato a costo medio ponderato su tutto lo
@@ -290,8 +300,13 @@ giudicarci sopra direbbe solo che non c'era.
 
 #### E8 — Acquisti senza registrazione (nuova, prima per priorità)
 - **Quando:** un acquisto non ha nel registro un'operazione reale sulla stessa
-  moneta, registrata fra `commento.giorni-registrazione` (3) giorni prima e
-  il momento dell'acquisto.
+  coppia (moneta e valuta), registrata fra `commento.giorni-registrazione` (3)
+  giorni prima e il momento dell'acquisto, che non abbia già esaurito la sua
+  quantità. Un'operazione eseguita in due ordini è coperta per intero; un
+  secondo acquisto dopo averla riempita no (sotto il 2% della quantità
+  registrata è riempita). Un acquisto più grande del registrato resta coperto:
+  la dimensione la guarda E9. La coppia del registro può essere scritta
+  XBTEUR, XBT/EUR o BTC/EUR.
 - **Testo:** "{n} acquisti su {t} non hanno un'operazione reale nel registro:
   {elenco con data}."
 - **Domanda:** "Dove erano scritti stop, obiettivo e motivo di quegli acquisti?"
@@ -299,16 +314,21 @@ giudicarci sopra direbbe solo che non c'era.
   che `Controllo` dichiara mancante. Ora i dati per verificarlo ci sono.
 
 #### E9 — Dimensione oltre il metodo (nuova)
-- **Quando:** un acquisto nella valuta del capitale supera il controvalore
-  massimo che il metodo consente: con il rischio dell'1% di 203 EUR e lo stop
-  più stretto ammesso (5%), circa 33 EUR. Lo stop esce a mercato (vedi
-  `MatematicaOperazione.USCITA_FORZATA`): con la tariffa limite erano 35.
+- **Quando:** una posizione nella valuta del capitale, aperta dal metodo in
+  poi, supera il controvalore massimo che il metodo consente: con il rischio
+  dell'1% di 203 EUR e lo stop più stretto ammesso (5%), circa 33 EUR. Lo stop
+  esce a mercato (vedi `MatematicaOperazione.USCITA_FORZATA`): con la tariffa
+  limite erano 35. Conta la posizione, non l'ordine: due acquisti da 25 EUR
+  sono una posizione da 50. Per un giro chiuso è il costo più alto tenuto
+  insieme (`costoMassimo`), per una posizione aperta il costo di oggi;
+  commissioni comprese.
 - **Calcolo:** `capitale × rischio-per-operazione / 100`, diviso
   `MatematicaOperazione.rischioPerUnita(1, 1 − ampiezza-stop-minima / 100,
   tipo-ordine)`. Se cambiano capitale o soglie, cambia da solo.
-- **Testo:** "{n} acquisti superano i {max} EUR, la dimensione più alta che il
-  metodo consente: {elenco}."
-- **Domanda:** "Con quale stop avevi calcolato la quantità di quegli acquisti?"
+- **Testo:** "{n} posizioni superano i {max} EUR, la dimensione più alta che il
+  metodo consente con il rischio dell'1% e lo stop più stretto ammesso (5%):
+  {coppia} per {costo}, …"
+- **Domanda:** "Con quale stop avevi calcolato la quantità di quelle posizioni?"
 - **Nota:** sotto quel limite non si può dire niente: senza lo stop di ogni
   acquisto non si sa se il rischio era l'1%.
 
@@ -316,15 +336,18 @@ giudicarci sopra direbbe solo che non c'era.
 - **Quando:** nel periodo ci sono stati momenti con più di
   `scansione.posizioni-massime` (2) operazioni aperte insieme.
 - **Calcolo:** sovrapposizione di apertura e chiusura delle operazioni chiuse e
-  delle posizioni aperte. Una moneta conta una volta, anche se è in carico in
-  due valute.
+  delle posizioni aperte, dal metodo in poi. Conta anche una posizione aperta
+  prima del metodo e rimasta aperta dopo: occupa un posto lo stesso. Una moneta
+  conta una volta, anche se è in carico in due valute.
 - **Testo:** "Nel periodo hai tenuto fino a {n} posizioni aperte insieme: la
   guida ne prevede al massimo {max}."
 
 #### E7 — Oltre il time stop (nuova)
 - **Quando:** un'operazione chiusa nel periodo è durata più di
   `scansione.giorni-time-stop` (15) giorni, oppure una posizione aperta lo è da
-  più di quei giorni.
+  più di quei giorni. I giorni sono quelli toccati: 15 giorni e un'ora sono il
+  sedicesimo, e contano come 16 anche nel testo. Troncando erano 15, e il
+  controllo non scattava.
 - **Testo:** "{n} operazioni sono durate più dei {15} giorni del time stop:
   {coppia} ({giorni} giorni), …" e per le aperte: "{coppia} è aperta da {giorni}
   giorni."
@@ -460,6 +483,13 @@ cambiano in `application.yml` senza toccare il codice, tranne i punti 3 e 5.
   prezzo sotto lo stop; quotazioni abbinate con `PairResolver`; RSI 50 su
   serie piatta e periodi della scansione controllati all'avvio; chiamate
   private a Kraken una alla volta; quantile della t dalle tavole fino a 30.
+- **Revisione del 24/11, seconda parte:** registro con coppia normalizzata,
+  quantità obbligatoria e tetto di posizioni sulle reali, rapporto e tariffa
+  scritti dal registro; operazioni reali chiuse dagli ordini su Kraken
+  (`ChiusuraReale`) o a mano; E8 per quantità e coppia; E9 per posizione; E10
+  con le posizioni aperte prima del metodo; E7 sui giorni toccati; B7 per lo
+  storico troncato; candele orarie per il giorno di registrazione della carta;
+  controllo `PREZZO_ATTUALE` nella scansione; calcolatore con lo stop a mercato.
 - **Niente commit:** il codice viene consegnato, il commit lo fai tu.
 
 ## 12. Esempio sui tuoi dati

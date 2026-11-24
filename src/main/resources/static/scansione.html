@@ -138,20 +138,25 @@ const oraData = s => s ? new Date(s).toLocaleString('it-IT',{day:'2-digit',month
    questa mappa mostra il nome grezzo, che e' brutto ma non sbagliato. */
 const NOMI_CONTROLLI = {
   LIQUIDITA:'liquidità', TREND:'trend', BREAKOUT:'rottura', MOMENTO:'RSI',
-  DISTANZA_DALLA_MEDIA:'distanza dalla media', AMPIEZZA_STOP:'ampiezza stop',
+  DISTANZA_DALLA_MEDIA:'distanza dalla media', PREZZO_ATTUALE:'prezzo di stamattina', AMPIEZZA_STOP:'ampiezza stop',
   RESISTENZA_INTERMEDIA:'resistenza in mezzo'
 };
 const NOMI_STATI = {
   APERTA:'aperta', CHIUSA_ALLO_STOP:'stop', CHIUSA_ALL_OBIETTIVO:'obiettivo',
-  CHIUSA_PER_TEMPO:'tempo'
+  CHIUSA_PER_TEMPO:'tempo', CHIUSA_A_MANO:'a mano', NON_ESEGUITA:'mai eseguita'
 };
 const NOMI_TRIGGER = {
   BREAKOUT_20_GIORNI:'breakout 20g', PULLBACK_MEDIA:'pullback', MANUALE:'manuale'
 };
 
-async function chiedi(url, opzioni){
-  const risposta = await fetch(url, opzioni);
-  if (!risposta.ok) throw new Error('il server ha risposto ' + risposta.status);
+/* Ogni POST porta l'header che il server pretende: una pagina di un altro
+   sito non puo' aggiungerlo senza un permesso che il server non da'. */
+async function chiedi(url, opzioni = {}){
+  const risposta = await fetch(url, {...opzioni, headers: {'X-Journal': '1', ...opzioni.headers}});
+  if (!risposta.ok) {
+    const corpo = await risposta.json().catch(() => ({}));
+    throw new Error(corpo.errore || 'il server ha risposto ' + risposta.status);
+  }
   return risposta.json();
 }
 
@@ -251,9 +256,14 @@ async function caricaScansione(){
 }
 
 /* ---------- registro ---------- */
+/* Le operazioni reali si chiudono dagli ordini su Kraken; quando non basta
+   (venduta in un'altra valuta, ledger non leggibile) si chiudono a mano. */
 function rigaOperazione(o){
-  const chiusa = o.stato !== 'APERTA';
+  const chiusa = o.risultatoInR !== null && o.risultatoInR !== undefined;
   const classe = !chiusa ? 'aperta' : (o.risultatoInR > 0 ? 'guadagno' : 'perdita');
+  const uscita = chiusa ? prz(o.prezzoUscita) + '<span class="sub">' + data(o.dataChiusura) + '</span>'
+    : o.reale && o.stato === 'APERTA' ? `<button type="button" class="chiudiAMano" data-id="${o.id}">chiudi a mano</button>`
+    : '—';
   return `<tr>
     <td>${data(o.dataRegistrazione)}<span class="carta">${o.reale ? 'reale' : 'carta'}</span></td>
     <td class="coppia">${esc(o.coppia)}</td>
@@ -262,7 +272,7 @@ function rigaOperazione(o){
     <td>${prz(o.stop)}</td>
     <td>${prz(o.obiettivo)}</td>
     <td><span class="stato ${classe}">${NOMI_STATI[o.stato] || o.stato}</span></td>
-    <td>${chiusa ? prz(o.prezzoUscita) + '<span class="sub">' + data(o.dataChiusura) + '</span>' : '—'}</td>
+    <td>${uscita}</td>
     <td class="stato ${classe}">${chiusa ? fmt(o.risultatoInR,2) + ' R' : '—'}</td>
   </tr>`;
 }
@@ -300,10 +310,25 @@ $('bottoneLavoro').addEventListener('click', () =>
 
 $('bottoneRisoluzione').addEventListener('click', () =>
   conBottone($('bottoneRisoluzione'), 'Chiudo…', async () => {
-    const esito = await chiedi('/api/registro/risoluzione', {method:'POST'});
+    const esito = await chiedi('/api/giornaliero/risoluzione', {method:'POST'});
     $('statoRegistro').textContent = `${esito.chiuse} operazioni chiuse adesso.`;
     await Promise.all([caricaStatistiche(), caricaRegistro()]);
   }));
+
+$('tabellaRegistro').addEventListener('click', async ev => {
+  const bottone = ev.target.closest('button.chiudiAMano'); if (!bottone) return;
+  const prezzo = Number(String(prompt('Prezzo medio a cui hai venduto:') ?? '').replace(',', '.'));
+  if (!(prezzo > 0)) return;
+  await conBottone(bottone, 'Chiudo…', async () => {
+    try {
+      await chiedi(`/api/registro/${bottone.dataset.id}/chiusura`, {method:'POST',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify({prezzoUscita: prezzo})});
+      await Promise.all([caricaStatistiche(), caricaRegistro()]);
+    } catch (e) {
+      $('statoRegistro').textContent = 'Chiusura non riuscita: ' + e.message;
+    }
+  });
+});
 
 caricaStatistiche();
 caricaScansione();

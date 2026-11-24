@@ -22,6 +22,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -63,6 +64,8 @@ public class GeneratoreCommento {
     private static final int VOCI_MASSIME = 5;
     private static final int DOMANDE_MASSIME = 3;
     private static final int ELENCO_MASSIMO = 6;
+    /** Sotto il 2% della quantita' registrata un'operazione e' riempita: il resto sono commissioni e arrotondamenti. */
+    private static final double QUOTA_ESAURITA = 0.02;
     private static final BigDecimal CENTO = BigDecimal.valueOf(100);
     private static final MathContext MC = MathContext.DECIMAL64;
 
@@ -115,7 +118,7 @@ public class GeneratoreCommento {
         return report(
                 String.join(" ", c1(d), c2(d), c3(d)),
                 Stream.of(e8(d), d2(d), d1(d), e9(d), e10(d), e7(d), e1(d), e3(d), e2(d), d4(d), e4(d), e6(d), d3(d)),
-                Stream.of(b0(d), b1(d), b2(d), b3(d), b4(d), b5(d), b6()));
+                Stream.of(b0(d), b7(d), b1(d), b2(d), b3(d), b4(d), b5(d), b6()));
     }
 
     private static JournalReport report(String lettura, Stream<Optional<Voce>> regole, Stream<Optional<String>> limiti) {
@@ -158,6 +161,11 @@ public class GeneratoreCommento {
 
         boolean nelMetodo(Instant istante) {
             return !istante.isBefore(inizioMetodo);
+        }
+
+        /** L'istante, o l'inizio del metodo se viene prima. */
+        Instant dalMetodo(Instant istante) {
+            return nelMetodo(istante) ? istante : inizioMetodo;
         }
     }
 
@@ -232,6 +240,13 @@ public class GeneratoreCommento {
         return d.s.ledgerLetto() ? Optional.empty() : Optional.of(
                 "La chiave API non può leggere il ledger: mancano le operazioni fatte dall'app, e le vendite "
                         + "di monete comprate lì risultano senza acquisto. Aggiungi il permesso Query Ledger Entries.");
+    }
+
+    /** B7 — Storico troncato: Kraken ha restituito solo le voci piu' recenti. */
+    private static Optional<String> b7(Dati d) {
+        return d.s.storicoCompleto() ? Optional.empty() : Optional.of(
+                "Lo storico scaricato da Kraken si ferma alle voci più recenti: le vendite di monete comprate "
+                        + "prima risultano senza costo di carico, anche se un acquisto c'è stato.");
     }
 
     /** B1 — Poche operazioni chiuse. */
@@ -408,7 +423,7 @@ public class GeneratoreCommento {
     /** E8 — Acquisti senza un'operazione reale nel registro. */
     private Optional<Voce> e8(Dati d) {
         int totali = d.acquistiNelMetodo.size();
-        List<Ordine> senza = d.acquistiNelMetodo.stream().filter(o -> !registrato(o, d.reali)).toList();
+        List<Ordine> senza = nonRegistrati(d.acquistiNelMetodo, d.reali);
         if (senza.isEmpty()) {
             return Optional.empty();
         }
@@ -423,36 +438,66 @@ public class GeneratoreCommento {
                 + (senza.size() == 1 ? "quell'acquisto?" : "quegli acquisti?"));
     }
 
-    /** Un'operazione reale sulla stessa moneta, scritta nei giorni prima dell'acquisto. */
-    private boolean registrato(Ordine acquisto, List<OperazioneRegistrata> reali) {
-        Instant da = acquisto.istante().minus(Duration.ofDays(commento.giorniRegistrazione()));
-        return reali.stream().anyMatch(r -> monetaDi(r.coppia()).equals(acquisto.moneta())
-                && !r.dataRegistrazione().isBefore(da) && !r.dataRegistrazione().isAfter(acquisto.istante()));
+    /**
+     * Gli acquisti che nessuna operazione reale copre. Un'operazione copre gli
+     * acquisti sulla stessa coppia, nei giorni dopo la registrazione, finche'
+     * non ne ha esaurito la quantita': un'operazione eseguita in due ordini e'
+     * coperta, un secondo acquisto dopo averla gia' riempita no. Un acquisto
+     * piu' grande del registrato resta coperto: la dimensione la guarda E9.
+     */
+    private List<Ordine> nonRegistrati(List<Ordine> acquisti, List<OperazioneRegistrata> reali) {
+        Duration finestra = Duration.ofDays(commento.giorniRegistrazione());
+        Map<OperazioneRegistrata, BigDecimal> residuo = new IdentityHashMap<>();
+        reali.forEach(r -> residuo.put(r, BigDecimal.valueOf(r.quantita())));
+        List<Ordine> senza = new ArrayList<>();
+        for (Ordine acquisto : acquisti.stream().sorted(Comparator.comparing(Ordine::istante)).toList()) {
+            Optional<OperazioneRegistrata> copre = reali.stream()
+                    .filter(r -> stessaCoppia(r, acquisto)
+                            && !r.dataRegistrazione().isAfter(acquisto.istante())
+                            && !r.dataRegistrazione().plus(finestra).isBefore(acquisto.istante())
+                            && residuo.get(r).compareTo(BigDecimal.valueOf(r.quantita() * QUOTA_ESAURITA)) > 0)
+                    .findFirst();
+            copre.ifPresentOrElse(r -> residuo.merge(r, acquisto.quantita().negate(), BigDecimal::add),
+                    () -> senza.add(acquisto));
+        }
+        return senza;
     }
 
-    /** Il registro accetta sia XBTEUR sia XBT/EUR. */
-    private String monetaDi(String coppia) {
-        return pairResolver.resolve(coppia.replace("/", "")).base();
+    /** Il registro accetta XBTEUR, XBT/EUR e BTC/EUR: tutte la stessa coppia degli ordini. */
+    private boolean stessaCoppia(OperazioneRegistrata registrata, Ordine acquisto) {
+        PairResolver.Pair coppia = pairResolver.resolve(registrata.coppia().replace("/", ""));
+        return coppia.base().equals(acquisto.moneta()) && coppia.quote().equals(acquisto.valuta());
     }
 
-    /** E9 — Dimensione oltre quella che il metodo consente. */
+    /**
+     * E9 — Posizioni oltre la dimensione che il metodo consente. Conta la
+     * posizione, non il singolo ordine: due acquisti da 25 EUR sulla stessa
+     * moneta sono una posizione da 50. Per un giro chiuso e' il costo piu'
+     * alto tenuto insieme, per una posizione aperta il costo di oggi.
+     */
     private Optional<Voce> e9(Dati d) {
         if (d.valutaWatchlist == null) {
             return Optional.empty();
         }
         double massimo = dimensioneMassima();
-        List<Ordine> oltre = d.acquistiNelMetodo.stream().filter(o -> o.valuta().equals(d.valutaWatchlist)
-                && o.controvalore().doubleValue() > massimo).toList();
+        List<String> oltre = Stream.concat(
+                d.s.operazioniChiuse().stream()
+                        .filter(o -> d.nelMetodo(o.apertura()) && o.valuta().equals(d.valutaWatchlist)
+                                && o.costoMassimo() != null && o.costoMassimo().doubleValue() > massimo)
+                        .map(o -> o.coppia() + " per " + importo(o.costoMassimo(), o.valuta())),
+                d.s.posizioniAperte().stream()
+                        .filter(p -> d.nelMetodo(p.apertaDal()) && p.valuta().equals(d.valutaWatchlist)
+                                && p.costo().doubleValue() > massimo)
+                        .map(p -> p.coppia() + " per " + importo(p.costo(), p.valuta()))).toList();
         if (oltre.isEmpty()) {
             return Optional.empty();
         }
-        List<String> voci = oltre.stream().map(o -> o.coppia() + " per " + importo(o.controvalore(), o.valuta())).toList();
         String testo = "%s %s i %s %s, la dimensione più alta che il metodo consente con il rischio %s "
                 + "e lo stop più stretto ammesso (%s): %s.";
-        return Voce.nuova(testo.formatted(plurale(oltre.size(), "acquisto", "acquisti"), oltre.size() == 1 ? "supera" : "superano",
+        return Voce.nuova(testo.formatted(plurale(oltre.size(), "posizione", "posizioni"), oltre.size() == 1 ? "supera" : "superano",
                         numero(massimo, 0), d.valutaWatchlist, di(quota(scansione.rischioPerOperazione())),
-                        quota(scansione.ampiezzaStopMinima()), elenco(voci, ELENCO_MASSIMO, "altri")),
-                "Con quale stop avevi calcolato la quantità di " + (oltre.size() == 1 ? "quell'acquisto?" : "quegli acquisti?"));
+                        quota(scansione.ampiezzaStopMinima()), elenco(oltre, ELENCO_MASSIMO, "altre")),
+                "Con quale stop avevi calcolato la quantità di " + (oltre.size() == 1 ? "quella posizione?" : "quelle posizioni?"));
     }
 
     /**
@@ -469,10 +514,12 @@ public class GeneratoreCommento {
     /** E10 — Piu' posizioni aperte insieme di quelle previste. */
     private Optional<Voce> e10(Dati d) {
         List<Instant[]> intervalli = new ArrayList<>();
-        d.s.operazioniChiuse().stream().filter(o -> d.nelMetodo(o.apertura()))
-                .forEach(o -> intervalli.add(new Instant[] {o.apertura(), o.chiusura()}));
-        aperteUnaPerMoneta(d).values().stream().filter(p -> d.nelMetodo(p.apertaDal()))
-                .forEach(p -> intervalli.add(new Instant[] {p.apertaDal(), d.s.periodEnd()}));
+        // Conta anche chi era aperta prima del metodo ed e' rimasta aperta dopo:
+        // occupa un posto lo stesso. Si misura solo da quando vale il metodo.
+        d.s.operazioniChiuse().stream().filter(o -> d.nelMetodo(o.chiusura()))
+                .forEach(o -> intervalli.add(new Instant[] {d.dalMetodo(o.apertura()), o.chiusura()}));
+        aperteUnaPerMoneta(d).values()
+                .forEach(p -> intervalli.add(new Instant[] {d.dalMetodo(p.apertaDal()), d.s.periodEnd()}));
 
         // Chi chiude in un istante non si somma a chi apre nello stesso istante.
         List<Map.Entry<Instant, Integer>> eventi = new ArrayList<>();
@@ -502,11 +549,12 @@ public class GeneratoreCommento {
     private Optional<Voce> e7(Dati d) {
         int limite = scansione.giorniTimeStop();
         List<String> chiuse = d.s.operazioniChiuse().stream()
-                .filter(o -> d.nelMetodo(o.apertura()) && o.giorni() > limite)
-                .map(o -> o.coppia() + " (" + plurale(o.giorni(), "giorno", "giorni") + ")").toList();
+                .filter(o -> d.nelMetodo(o.apertura()) && giorniIniziati(o.apertura(), o.chiusura()) > limite)
+                .map(o -> o.coppia() + " (" + plurale(giorniIniziati(o.apertura(), o.chiusura()), "giorno", "giorni") + ")")
+                .toList();
         List<String> aperte = aperteUnaPerMoneta(d).values().stream()
-                .filter(p -> d.nelMetodo(p.apertaDal()) && giorniDa(p.apertaDal(), d.s.periodEnd()) > limite)
-                .map(p -> p.coppia() + " (" + plurale(giorniDa(p.apertaDal(), d.s.periodEnd()), "giorno", "giorni") + ")")
+                .filter(p -> d.nelMetodo(p.apertaDal()) && giorniIniziati(p.apertaDal(), d.s.periodEnd()) > limite)
+                .map(p -> p.coppia() + " (" + plurale(giorniIniziati(p.apertaDal(), d.s.periodEnd()), "giorno", "giorni") + ")")
                 .toList();
         List<String> frasi = new ArrayList<>();
         if (!chiuse.isEmpty()) {
@@ -522,8 +570,12 @@ public class GeneratoreCommento {
                 : Voce.nuova(String.join(" ", frasi), "Cosa ti ha tenuto dentro oltre il time stop?");
     }
 
-    private static long giorniDa(Instant da, Instant a) {
-        return Duration.between(da, a).toDays();
+    /**
+     * I giorni toccati, contando quello in corso: 15 giorni e 23 ore sono gia'
+     * il sedicesimo, oltre un time stop di 15. Troncando diventavano 15.
+     */
+    private static long giorniIniziati(Instant da, Instant a) {
+        return Math.ceilDiv(Duration.between(da, a).getSeconds(), Duration.ofDays(1).getSeconds());
     }
 
     /** E1 — Acquisti fuori watchlist. */

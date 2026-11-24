@@ -1,6 +1,7 @@
 package dev.kraken.journal.scansione;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -58,7 +59,21 @@ class ServizioScansioneTest {
         Candidato candidato = esamina(candeleConRottura(2.0), 163.40);
 
         assertTrue(candidato.tuttiSuperati(), bocciati(candidato));
-        assertEquals(7, candidato.superati());
+        assertEquals(8, candidato.superati());
+    }
+
+    /**
+     * La chiusura di ieri ha rotto, ma stamattina il prezzo e' tornato sotto il
+     * massimo della rottura: il segnale non vale piu', e il piano partirebbe
+     * da una falsa rottura.
+     */
+    @Test
+    void unaRotturaRientrataStanotteNonVale() {
+        Candidato rientrata = esamina(candeleConRottura(2.0), 150.00);
+
+        assertEquals(Esito.SUPERATO, esitoDi(rientrata, Controllo.BREAKOUT), "ieri la rottura c'era");
+        assertEquals(Esito.BOCCIATO, esitoDi(rientrata, Controllo.PREZZO_ATTUALE));
+        assertFalse(rientrata.tuttiSuperati());
     }
 
     /**

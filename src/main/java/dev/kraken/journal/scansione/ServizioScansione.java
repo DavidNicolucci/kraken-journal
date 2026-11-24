@@ -1,5 +1,8 @@
 package dev.kraken.journal.scansione;
 
+import java.math.BigDecimal;
+import java.math.MathContext;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
@@ -102,11 +105,24 @@ public class ServizioScansione {
         return Candidato.di(coppia, quotazione, indicatori, piano, controlla(quotazione, indicatori, piano));
     }
 
+    /**
+     * Le soglie si confrontano con il valore che la pagina mostra, arrotondato
+     * come lei: un RSI di 49,96 si legge 50,0, e bocciarlo contro "fra 50 e 70"
+     * sembrava un errore. I prezzi restano interi, con sei cifre significative
+     * a video: con quattro decimali fissi PEPE diventava zero.
+     */
     private List<EsitoControllo> controlla(Quotazione quotazione, Indicatori i, Piano piano) {
+        double controvalore = arrotondato(quotazione.controvalore24h(), 0);
+        double multiploVolume = arrotondato(i.multiploVolume(), 1);
+        double rsi = arrotondato(i.rsi14(), 1);
+        double distanza = arrotondato(Math.abs(i.distanzaDallaMedia()), 1);
+        double ultimo = quotazione.ultimo();
+        double distanzaAttuale = arrotondato(Math.abs(ultimo / i.mediaMobile20() - 1) * 100, 1);
+        double ampiezzaStop = arrotondato(piano.ampiezzaStop(), 1);
         return List.of(
                 EsitoControllo.di(Controllo.LIQUIDITA,
-                        quotazione.controvalore24h() >= proprieta.volumeMinimo(),
-                        arrotonda(quotazione.controvalore24h(), 0),
+                        controvalore >= proprieta.volumeMinimo(),
+                        arrotonda(controvalore, 0),
                         ">= " + arrotonda(proprieta.volumeMinimo(), 0)),
                 EsitoControllo.di(Controllo.TREND,
                         i.mediaMobileInSalita() && i.chiusura() > i.mediaMobile20(),
@@ -114,32 +130,38 @@ public class ServizioScansione {
                         "media in salita e prezzo sopra"),
                 EsitoControllo.di(Controllo.BREAKOUT,
                         i.chiusura() > i.massimoBreakout()
-                                && i.multiploVolume() >= proprieta.multiploVolumeBreakout(),
-                        "chiusura " + arrotonda(i.chiusura(), 4) + ", volume " + arrotonda(i.multiploVolume(), 1) + "x",
-                        "sopra " + arrotonda(i.massimoBreakout(), 4) + " con volume >= "
+                                && multiploVolume >= proprieta.multiploVolumeBreakout(),
+                        "chiusura " + prezzo(i.chiusura()) + ", volume " + arrotonda(multiploVolume, 1) + "x",
+                        "sopra " + prezzo(i.massimoBreakout()) + " con volume >= "
                                 + arrotonda(proprieta.multiploVolumeBreakout(), 1) + "x"),
                 EsitoControllo.di(Controllo.MOMENTO,
-                        i.rsi14() >= proprieta.rsiMinimo() && i.rsi14() <= proprieta.rsiMassimo(),
-                        arrotonda(i.rsi14(), 1),
+                        rsi >= proprieta.rsiMinimo() && rsi <= proprieta.rsiMassimo(),
+                        arrotonda(rsi, 1),
                         "tra " + arrotonda(proprieta.rsiMinimo(), 0) + " e " + arrotonda(proprieta.rsiMassimo(), 0)),
                 // Valore assoluto: la distanza conta in entrambe le direzioni.
                 // Col segno, un prezzo molto SOTTO la media superava il controllo
                 // senza che volesse dire niente. Indicatori resta col segno:
                 // serve alla colonna della tabella e al riepilogo giornaliero.
                 EsitoControllo.di(Controllo.DISTANZA_DALLA_MEDIA,
-                        Math.abs(i.distanzaDallaMedia()) <= proprieta.distanzaMassimaDallaMedia(),
-                        arrotonda(Math.abs(i.distanzaDallaMedia()), 1) + "%",
+                        distanza <= proprieta.distanzaMassimaDallaMedia(),
+                        arrotonda(distanza, 1) + "%",
                         "<= " + arrotonda(proprieta.distanzaMassimaDallaMedia(), 0) + "%"),
+                EsitoControllo.di(Controllo.PREZZO_ATTUALE,
+                        ultimo > i.mediaMobile20() && ultimo > i.massimoBreakout()
+                                && distanzaAttuale <= proprieta.distanzaMassimaDallaMedia(),
+                        prezzo(ultimo) + ", " + arrotonda(distanzaAttuale, 1) + "% dalla media",
+                        "sopra " + prezzo(Math.max(i.mediaMobile20(), i.massimoBreakout())) + ", entro "
+                                + arrotonda(proprieta.distanzaMassimaDallaMedia(), 0) + "%"),
                 EsitoControllo.di(Controllo.AMPIEZZA_STOP,
-                        piano.ampiezzaStop() >= proprieta.ampiezzaStopMinima()
-                                && piano.ampiezzaStop() <= proprieta.ampiezzaStopMassima(),
-                        arrotonda(piano.ampiezzaStop(), 1) + "%",
+                        ampiezzaStop >= proprieta.ampiezzaStopMinima()
+                                && ampiezzaStop <= proprieta.ampiezzaStopMassima(),
+                        arrotonda(ampiezzaStop, 1) + "%",
                         "tra " + arrotonda(proprieta.ampiezzaStopMinima(), 0) + "% e "
                                 + arrotonda(proprieta.ampiezzaStopMassima(), 0) + "%"),
                 EsitoControllo.di(Controllo.RESISTENZA_INTERMEDIA,
                         i.massimo30Precedente() <= piano.entrata() || i.massimo30Precedente() >= piano.obiettivo(),
-                        "massimo 30g " + arrotonda(i.massimo30Precedente(), 4),
-                        "fuori da " + arrotonda(piano.entrata(), 4) + " - " + arrotonda(piano.obiettivo(), 4)));
+                        "massimo 30g " + prezzo(i.massimo30Precedente()),
+                        "fuori da " + prezzo(piano.entrata()) + " - " + prezzo(piano.obiettivo())));
     }
 
     /**
@@ -181,5 +203,14 @@ public class ServizioScansione {
      */
     private static String arrotonda(double valore, int decimali) {
         return String.format(java.util.Locale.ITALY, "%." + decimali + "f", valore);
+    }
+
+    private static double arrotondato(double valore, int decimali) {
+        return BigDecimal.valueOf(valore).setScale(decimali, RoundingMode.HALF_UP).doubleValue();
+    }
+
+    /** Sei cifre significative con la virgola: 55409,8 e 0,0000123456 si leggono tutti e due. */
+    private static String prezzo(double valore) {
+        return BigDecimal.valueOf(valore).round(new MathContext(6)).stripTrailingZeros().toPlainString().replace('.', ',');
     }
 }

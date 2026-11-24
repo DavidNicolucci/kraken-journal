@@ -2,6 +2,7 @@ package dev.kraken.journal.calcolatore.dto;
 
 import dev.kraken.journal.scansione.Verso;
 
+import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -15,6 +16,9 @@ import jakarta.validation.constraints.PositiveOrZero;
  *
  * @param obiettivo facoltativo: senza, il calcolatore dice comunque quantita',
  *        pareggio e costi, e tace sul rapporto invece di inventarlo.
+ * @param commissioneUscita quella all'obiettivo e al pareggio: lo stop esce
+ *        sempre a mercato. Al massimo 10%: oltre non e' una tariffa di Kraken,
+ *        e al 100% il pareggio diventerebbe una divisione per zero.
  */
 public record RichiestaValutazione(
         @Positive double capitale,
@@ -23,8 +27,8 @@ public record RichiestaValutazione(
         @Positive double entrata,
         @Positive double stop,
         @PositiveOrZero double obiettivo,
-        @PositiveOrZero double commissioneEntrata,
-        @PositiveOrZero double commissioneUscita) {
+        @PositiveOrZero @DecimalMax("10") double commissioneEntrata,
+        @PositiveOrZero @DecimalMax("10") double commissioneUscita) {
 
     public double commissioneEntrataFrazione() {
         return commissioneEntrata / 100;

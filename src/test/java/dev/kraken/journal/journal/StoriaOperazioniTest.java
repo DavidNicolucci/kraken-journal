@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 
 import dev.kraken.journal.kraken.PairResolver;
 import dev.kraken.journal.kraken.dto.KrakenLedgerEntry;
+import dev.kraken.journal.kraken.dto.KrakenTrade;
 
 class StoriaOperazioniTest {
 
@@ -31,6 +32,20 @@ class StoriaOperazioniTest {
         List<Movimento> movimenti = storia.componi(List.of(), ledger).movimenti();
         assertEquals(1, movimenti.size());
         return movimenti.get(0);
+    }
+
+    /** Stesso istante: l'acquisto dall'app viene prima della vendita su Pro, che altrimenti non avrebbe costo. */
+    @Test
+    void aParitaDiIstanteLAcquistoVienePrima() {
+        var vendita = new KrakenTrade("V1", "SOLEUR", new BigDecimal("1790000000.5"), "sell", "limit",
+                new BigDecimal("100"), new BigDecimal("10"), new BigDecimal("0.04"), new BigDecimal("0.1"),
+                BigDecimal.ZERO, true);
+        List<Movimento> movimenti = storia.componi(List.of(vendita), List.of(
+                riga("T1", "spend", "", "ZEUR", "-10.00", "0.10"),
+                riga("T1", "receive", "", "SOL", "0.1", "0"))).movimenti();
+
+        assertTrue(movimenti.get(0).acquisto());
+        assertFalse(movimenti.get(1).acquisto());
     }
 
     @Test

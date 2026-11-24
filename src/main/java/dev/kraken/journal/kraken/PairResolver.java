@@ -1,6 +1,7 @@
 package dev.kraken.journal.kraken;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.springframework.stereotype.Component;
@@ -35,6 +36,13 @@ public class PairResolver {
     private static final Set<String> CODICI_STORICI = Set.of(
             "XXBT", "XETH", "XLTC", "XXRP", "XXLM", "XZEC", "XXMR", "XETC", "XREP", "XMLN", "XXDG",
             "ZUSD", "ZEUR", "ZGBP", "ZJPY", "ZCAD", "ZAUD", "ZCHF");
+
+    /**
+     * I nomi che usa il resto del mondo, e l'interfaccia di Kraken stessa, per
+     * le monete che l'API chiama in un altro modo: chi scrive BTC/EUR nel
+     * registro intende la XBT/EUR dei trade.
+     */
+    private static final Map<String, String> ALIAS = Map.of("BTC", "XBT", "DOGE", "XDG");
 
     public record Pair(String raw, String base, String quote, boolean fxConversion) {
         public String display() {
@@ -71,10 +79,25 @@ public class PairResolver {
         return componi(asset(base) + asset(quote), base, quote);
     }
 
-    /** Il codice di una moneta come lo si legge: ZEUR -> EUR, XXBT -> XBT, SOL.F -> SOL. */
+    /** Il codice di una moneta come lo si legge: ZEUR -> EUR, XXBT -> XBT, SOL.F -> SOL, BTC -> XBT. */
     public String asset(String codice) {
         String pulito = codice.toUpperCase().replaceFirst("\\..*$", "");
-        return CODICI_STORICI.contains(pulito) ? pulito.substring(1) : pulito;
+        String senzaPrefisso = CODICI_STORICI.contains(pulito) ? pulito.substring(1) : pulito;
+        return ALIAS.getOrDefault(senzaPrefisso, senzaPrefisso);
+    }
+
+    /**
+     * Il nome con cui la coppia si chiede a Kraken e si scrive nel registro,
+     * lo stesso della watchlist: XBT/EUR, btceur e XXBTZEUR diventano XBTEUR.
+     *
+     * @return null se non e' una coppia: quotazione sconosciuta o caratteri
+     *         che non stanno nel nome di una coppia, e che finirebbero tali e
+     *         quali nell'indirizzo della chiamata a Kraken.
+     */
+    public String altname(String coppia) {
+        Pair pair = resolve(coppia == null ? null : coppia.strip().replace("/", ""));
+        String nome = pair.base() + pair.quote();
+        return "?".equals(pair.quote()) || !nome.matches("[A-Z0-9]+") ? null : nome;
     }
 
     public boolean fiat(String codice) {

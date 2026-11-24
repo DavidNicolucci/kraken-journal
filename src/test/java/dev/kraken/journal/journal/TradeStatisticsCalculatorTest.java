@@ -318,9 +318,27 @@ class TradeStatisticsCalculatorTest {
         var primo = stats.operazioniChiuse().get(0);
         assertNumero("69.65", primo.investito());
         assertNumero("7.96", primo.risultato());
+        assertNumero("70", primo.costoMassimo());
+        assertNumero("78", primo.prezzoMedioUscita());
         var secondo = stats.operazioniChiuse().get(1);
         assertNumero("80.35", secondo.investito());
         assertNumero("10.10", secondo.risultato());
+        assertNumero("80.35", secondo.costoMassimo());
+        assertNumero("90", secondo.prezzoMedioUscita());
+    }
+
+    /** Due acquisti da 25 EUR sono una posizione da 50: e' la dimensione che conta per il metodo. */
+    @Test
+    void laDimensioneDellaPosizioneSommaGliAcquisti() {
+        var stats = calcola(
+                trade("SOLEUR", "buy", "100", "25.00", "0.00", "0.25", 1),
+                trade("SOLEUR", "buy", "100", "25.00", "0.00", "0.25", 2),
+                trade("SOLEUR", "sell", "110", "27.50", "0.00", "0.25", 3),
+                trade("SOLEUR", "sell", "90", "22.50", "0.00", "0.25", 4));
+
+        var giro = stats.operazioniChiuse().get(0);
+        assertNumero("50", giro.costoMassimo());
+        assertNumero("100", giro.prezzoMedioUscita());
     }
 
     /** Un acquisto in un'altra valuta senza cambio: non c'e' ne' il risultato ne' l'investito, che sarebbe parziale. */
