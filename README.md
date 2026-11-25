@@ -6,7 +6,7 @@ Strumenti personali per operare su Kraken con un metodo scritto e misurabile:
 - **Calcolatore**: quantita', pareggio e rapporto rischio/rendimento prima di entrare.
 - **Scansione**: controlla ogni giorno una watchlist fissa contro la checklist della guida.
 - **Registro**: tiene traccia delle operazioni (su carta o reali) e ne misura l'esito in R.
-- **Lavoro giornaliero**: alle 7:00 chiude le operazioni risolte e registra le nuove idonee.
+- **Lavoro giornaliero**: alle 9:15 chiude le operazioni risolte e registra le nuove idonee.
 - **Simulatore**: stima quante volte, da uno stato come quello di oggi, il prezzo e' salito a 7 giorni, e verifica sull'ultimo anno se saperlo e' servito.
 
 Tutto e' calcolato e scritto da codice deterministico, commento compreso: dal
@@ -178,7 +178,7 @@ il vantaggio e' misurato solo quando media meno margine resta sopra zero. Con
 0,8 R: `registrazioni-per-giudizio` e' il minimo per cominciare a guardare,
 non per concludere.
 
-### Lavoro giornaliero — ogni giorno alle 7:00 (Europe/Rome)
+### Lavoro giornaliero — ogni giorno alle 9:15 (Europe/Rome)
 
 1. Risolve le operazioni aperte, la carta sulle candele e le reali dagli
    ordini su Kraken, cosi' il registro e' aggiornato.
@@ -188,11 +188,13 @@ non per concludere.
    candidata per un'operazione reale.
 
 Le posizioni reali restano al massimo `posizioni-massime` (regola 2.3); le
-analisi su carta non hanno tetto, perche' non costano commissioni. Alle 7:00 le
+analisi su carta non hanno tetto, perche' non costano commissioni. Alle 9:15 le
 candele giornaliere di Kraken, che chiudono a mezzanotte UTC, sono gia' chiuse
 in qualunque stagione.
 
-Se il computer era spento alle 7:00, il lavoro si avvia a mano:
+L'orario sta in `giornaliero.cron`: va dopo l'accensione del computer, perche'
+un lavoro pianificato a computer spento salta e non viene recuperato. Se il
+computer era spento a quell'ora, il lavoro si avvia a mano:
 
 ```bash
 curl -X POST -H "X-Journal: 1" http://localhost:8080/api/giornaliero

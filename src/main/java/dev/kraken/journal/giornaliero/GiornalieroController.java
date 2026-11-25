@@ -19,7 +19,7 @@ public class GiornalieroController {
     }
 
     /**
-     * Avvio a mano, per i giorni in cui il computer era spento alle sette.
+     * Avvio a mano, per i giorni in cui il computer era spento all'ora del lavoro.
      * Le coppie gia' registrate oggi non vengono raddoppiate: un'operazione
      * aperta sulla stessa coppia blocca la seconda.
      */

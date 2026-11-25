@@ -34,12 +34,13 @@ kraken:
   api-key: ${KRAKEN_API_KEY}
   api-secret: ${KRAKEN_API_SECRET}
 
-# Il lavoro delle sette del mattino (regola R2: una revisione al giorno,
-# a orario fisso, su candela chiusa).
+# Il lavoro del mattino (regola R2: una revisione al giorno, a orario fisso,
+# su candela chiusa). Alle 9:15 e non alle 7: il computer si accende alle 9, e
+# un lavoro pianificato a computer spento salta senza essere recuperato.
 giornaliero:
-  # Le candele daily di Kraken chiudono a mezzanotte UTC: alle sette quella di
+  # Le candele daily di Kraken chiudono a mezzanotte UTC: alle 9:15 quella di
   # ieri e' chiusa da ore, in qualunque stagione.
-  cron: "0 0 7 * * *"
+  cron: "0 15 9 * * *"
   # Esplicito, altrimenti Spring userebbe il fuso di sistema e con l'ora legale
   # il lavoro si sposterebbe di un'ora due volte l'anno.
   fuso: Europe/Rome

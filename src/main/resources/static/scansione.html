@@ -284,7 +284,7 @@ async function caricaRegistro(){
     const operazioni = await chiedi('/api/registro');
     if (!operazioni.length) {
       $('statoRegistro').textContent =
-        'Il registro è vuoto. Si riempie da solo: il lavoro delle sette registra su carta ogni coppia idonea.';
+        'Il registro è vuoto. Si riempie da solo: il lavoro del mattino registra su carta ogni coppia idonea.';
       return;
     }
     $('statoRegistro').textContent = `${operazioni.length} registrazioni, dalla più recente.`;
