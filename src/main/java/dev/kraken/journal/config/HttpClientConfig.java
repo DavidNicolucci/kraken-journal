@@ -11,10 +11,11 @@ import org.springframework.web.client.RestClient;
 import dev.kraken.journal.journal.ProprietaCommento;
 import dev.kraken.journal.journal.ProprietaJournal;
 import dev.kraken.journal.scansione.ProprietaScansione;
+import dev.kraken.journal.simulatore.ProprietaSimulatore;
 
 @Configuration
 @EnableConfigurationProperties({KrakenProperties.class, ProprietaScansione.class, ProprietaJournal.class,
-        ProprietaCommento.class})
+        ProprietaCommento.class, ProprietaSimulatore.class})
 public class HttpClientConfig {
 
     private static SimpleClientHttpRequestFactory factory(Duration connect, Duration read) {

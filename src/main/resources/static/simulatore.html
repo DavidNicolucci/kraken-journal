@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulatore</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/stile.css">
+<style>
+
+.sheet{max-width:1020px}
+
+.testa{display:flex;flex-wrap:wrap;gap:14px;align-items:baseline;justify-content:space-between}
+
+.azioni{display:flex;border:1px solid var(--rule-strong)}
+.azioni button{font-family:var(--mono);font-size:13px;padding:9px 16px;
+  background:var(--paper-raised);color:var(--ink);border:0;cursor:pointer}
+.azioni button:hover:not(:disabled){background:var(--ink);color:var(--paper)}
+.azioni button:disabled{color:var(--rule-strong);cursor:progress}
+.azioni button:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+
+#verifica{margin-bottom:18px}
+.scroller{overflow-x:auto;margin-top:4px}
+th,td{white-space:nowrap}
+td .sub{display:block;font-size:11px;color:var(--ink-soft);margin-top:3px}
+.coppia{font-weight:600}
+.etichetta{font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+.BULL,.RIALZO{color:var(--gain)}
+.BEAR,.RIBASSO{color:var(--cost)}
+.LATERALE,.INCERTO{color:var(--ink-soft)}
+/* Senza un vantaggio verificato la percentuale resta leggibile ma non deve
+   sembrare un segnale. */
+.senzaValore .stima{color:var(--ink-soft)}
+
+.state{font-family:var(--prose);font-size:17px;color:var(--ink-soft);padding:8px 0}
+.nota{font-family:var(--prose);font-size:17px;line-height:1.5;max-width:64ch;color:var(--ink-soft)}
+
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <header class="masthead">
+    <div>
+      <h1>Simulatore</h1>
+      <div class="tagline" id="aggiornato">Cosa è successo dopo giorni come oggi, e se saperlo è servito</div>
+    </div>
+    <nav>
+      <a href="/">Registro</a>
+      <a href="/calcolatore.html">Calcolatore</a>
+      <a href="/scansione.html">Scansione</a>
+      <a href="/simulatore.html" aria-current="page">Simulatore</a>
+    </nav>
+  </header>
+
+  <section>
+    <div class="testa">
+      <p class="eyebrow" style="margin-bottom:0">La verifica sull'ultimo anno</p>
+      <div class="azioni"><button type="button" id="bottoneRicalcola">Ricalcola</button></div>
+    </div>
+    <div class="state" id="stato">Scarico le candele e verifico il modello…</div>
+    <div class="figures" id="verifica" hidden></div>
+    <div id="giudizio"></div>
+  </section>
+
+  <section>
+    <p class="eyebrow" id="titoloStime">Stima per coppia</p>
+    <div class="scroller"><table id="tabella" hidden>
+      <thead><tr>
+        <th>Coppia</th><th>Chiusura</th><th>Regime</th><th>RSI 14</th><th>60 giorni</th>
+        <th>Rialzo</th><th>Casi</th><th>Direzione</th><th>Prezzo, 5–95%</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table></div>
+    <div id="escluse"></div>
+    <p class="nota" style="margin-top:18px">La percentuale è una frequenza, non un'opinione: fra tutti i
+      giorni passati delle coppie in watchlist con lo stesso regime e la stessa fascia di RSI di oggi,
+      quante volte il prezzo era più alto dopo l'orizzonte. Accanto c'è l'intervallo al 95%, contato sui
+      soli casi che non si sovrappongono. Se l'intervallo contiene il 50%, la direzione è incerta.</p>
+  </section>
+
+  <footer>
+    Il regime descrive le ultime settimane: bull è prezzo sopra la media a 50, media a 20 in salita e
+    rendimento a 60 giorni positivo; bear il contrario; laterale tutto il resto. La verifica rifà la
+    stima per ogni giorno dell'ultimo anno usando solo i dati che c'erano quel giorno, e la confronta
+    con la frequenza di rialzo di tutti i giorni. L'intervallo di prezzo è quello dei movimenti della
+    coppia nell'ultimo anno: dice quanto si è mosso, non dove andrà. Niente di questa pagina dice di
+    comprare o vendere.
+  </footer>
+
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = (v,d=2) => Number(v).toLocaleString('it-IT',{minimumFractionDigits:d,maximumFractionDigits:d});
+const prz = v => Number(v).toLocaleString('it-IT',{maximumSignificantDigits:6});
+const pct = (v,d=0) => fmt(v * 100, d) + '%';
+const data = s => s ? new Date(s).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '—';
+
+/* Le etichette degli enum stanno qui e solo qui, come nelle altre pagine. */
+const NOMI_REGIMI = {BULL:'bull', BEAR:'bear', LATERALE:'laterale'};
+const NOMI_DIREZIONI = {RIALZO:'rialzo', RIBASSO:'ribasso', INCERTO:'incerto'};
+
+async function chiedi(url){
+  const risposta = await fetch(url, {headers: {'X-Journal': '1'}});
+  if (!risposta.ok) {
+    const corpo = await risposta.json().catch(() => ({}));
+    throw new Error(corpo.errore || 'il server ha risposto ' + risposta.status);
+  }
+  return risposta.json();
+}
+
+function mostraVerifica(v, orizzonte){
+  const margine = v.margine === null || v.margine === undefined ? '' : ' ± ' + fmt(v.margine, 4);
+  $('verifica').innerHTML = `
+    <div class="fig"><dt>Errore del modello</dt>
+      <dd>${fmt(v.brierModello, 4)} <span class="sub">base ${fmt(v.brierBase, 4)} · 0,25 è dire sempre 50%</span></dd></div>
+    <div class="fig"><dt>Vantaggio sulla base</dt>
+      <dd class="${v.verdetto === 'VANTAGGIO' ? 'gain' : v.verdetto === 'PEGGIORE_DELLA_BASE' ? 'cost' : ''}">${fmt(v.vantaggio, 4)}
+        <span class="sub">${margine ? 'margine' + margine : 'margine non calcolabile'}</span></dd></div>
+    <div class="fig"><dt>Direzioni giuste</dt>
+      <dd>${pct(v.precisioneModello)} <span class="sub">base ${pct(v.precisioneBase)}</span></dd></div>
+    <div class="fig"><dt>Casi verificati</dt>
+      <dd>${v.casi} <span class="sub">${v.giorni} giorni indipendenti, dal ${data(v.dal)}</span></dd></div>
+    <div class="fig"><dt>Salito a ${orizzonte} giorni</dt>
+      <dd>${pct(v.frequenzaRialzo)} <span class="sub">nel periodo verificato</span></dd></div>`;
+  $('verifica').hidden = false;
+
+  const base = `La base è dire sempre la frequenza di rialzo di tutti i giorni passati.`;
+  $('giudizio').innerHTML = {
+    VANTAGGIO: `<p class="flag ok"><b>Nell'ultimo anno lo stato ha aiutato</b>
+      La stima per regime e RSI ha sbagliato meno della base anche togliendo il margine d'errore.
+      È una misura sul passato: un vantaggio piccolo può sparire, e non tiene conto delle commissioni.</p>`,
+    NESSUN_VANTAGGIO: `<p class="flag warn"><b>Nessun vantaggio misurabile</b>
+      La differenza dalla base sta dentro il margine d'errore: nell'ultimo anno sapere regime e RSI
+      non ha detto niente in più sulla direzione a ${orizzonte} giorni. Le percentuali qui sotto sono
+      vere come frequenze, ma non valgono più della base. ${base}</p>`,
+    PEGGIORE_DELLA_BASE: `<p class="flag"><b>Peggio della base</b>
+      Nell'ultimo anno la stima per regime e RSI ha sbagliato più della semplice frequenza di rialzo,
+      anche nel caso migliore. Le percentuali qui sotto non vanno usate. ${base}</p>`,
+    DATI_INSUFFICIENTI: `<p class="flag warn"><b>Troppo pochi giorni per un giudizio</b>
+      Servono più candele prima che la verifica dica qualcosa. ${base}</p>`
+  }[v.verdetto] || '';
+}
+
+function riga(p){
+  return `<tr>
+    <td class="coppia">${esc(p.coppia)}</td>
+    <td>${prz(p.chiusura)}</td>
+    <td><span class="etichetta ${p.regime}">${NOMI_REGIMI[p.regime] || esc(p.regime)}</span></td>
+    <td>${fmt(p.rsi, 1)}</td>
+    <td class="${p.momento60 > 0 ? 'gain' : p.momento60 < 0 ? 'cost' : ''}">${fmt(p.momento60, 1)}%</td>
+    <td class="stima">${pct(p.probabilitaRialzo)}<span class="sub">${pct(p.minimo)} – ${pct(p.massimo)}</span></td>
+    <td>${p.casi}<span class="sub">${p.indipendenti} indip.${p.dallaBase ? ' · stato raro, base' : ''}</span></td>
+    <td><span class="etichetta ${p.direzione}">${NOMI_DIREZIONI[p.direzione] || esc(p.direzione)}</span></td>
+    <td>${prz(p.prezzoBasso)} – ${prz(p.prezzoAlto)}<span class="sub">mediana ${prz(p.prezzoMediano)}</span></td>
+  </tr>`;
+}
+
+async function carica(){
+  $('stato').textContent = 'Scarico le candele e verifico il modello…';
+  try {
+    const r = await chiedi('/api/simulatore');
+    $('stato').textContent = `${r.previsioni.length} coppie analizzate, orizzonte ${r.orizzonte} giorni.`;
+    if (r.previsioni.length) {
+      $('aggiornato').textContent = 'Candela chiusa del ' + data(r.previsioni[0].istanteCandela)
+        + ' · orizzonte ' + r.orizzonte + ' giorni';
+    }
+    $('titoloStime').textContent = `Prezzo più alto fra ${r.orizzonte} giorni?`;
+    mostraVerifica(r.verifica, r.orizzonte);
+    const tabella = $('tabella');
+    tabella.classList.toggle('senzaValore', r.verifica.verdetto !== 'VANTAGGIO');
+    tabella.querySelector('tbody').innerHTML = r.previsioni.map(riga).join('');
+    tabella.hidden = !r.previsioni.length;
+    $('escluse').innerHTML = r.escluse.length
+      ? `<p class="flag warn"><b>Non analizzate</b>${r.escluse.map(esc).join('<br>')}</p>` : '';
+  } catch (e) {
+    $('stato').textContent = 'Simulatore non disponibile: ' + e.message;
+  }
+}
+
+$('bottoneRicalcola').addEventListener('click', async () => {
+  const b = $('bottoneRicalcola');
+  b.disabled = true; b.textContent = 'Calcolo…';
+  try { await carica(); } finally { b.disabled = false; b.textContent = 'Ricalcola'; }
+});
+
+carica();
+</script>
+</body>
+</html>

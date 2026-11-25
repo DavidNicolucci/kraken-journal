@@ -7,6 +7,7 @@ Strumenti personali per operare su Kraken con un metodo scritto e misurabile:
 - **Scansione**: controlla ogni giorno una watchlist fissa contro la checklist della guida.
 - **Registro**: tiene traccia delle operazioni (su carta o reali) e ne misura l'esito in R.
 - **Lavoro giornaliero**: alle 7:00 chiude le operazioni risolte e registra le nuove idonee.
+- **Simulatore**: stima quante volte, da uno stato come quello di oggi, il prezzo e' salito a 7 giorni, e verifica sull'ultimo anno se saperlo e' servito.
 
 Tutto e' calcolato e scritto da codice deterministico, commento compreso: dal
 computer non esce nessun dato, a parte le chiamate a Kraken.
@@ -203,12 +204,49 @@ permesso che il server non da'. Senza, il server risponde `403`.
 
 Le coppie gia' aperte non vengono registrate due volte.
 
+### Simulatore — `GET /api/simulatore`
+
+Per ogni coppia della watchlist scarica le candele giornaliere chiuse (Kraken
+ne da' 720, le stesse della scansione e dalla stessa cache) e risponde a una
+domanda sola: **il prezzo sara' piu' alto fra `orizzonte` giorni?**
+
+1. **Stato del giorno.** Regime e fascia di RSI, calcolati solo sulle candele
+   fino a quel giorno:
+   - `BULL`: prezzo sopra la media a 50, media a 20 in salita, rendimento a 60 giorni positivo;
+   - `BEAR`: tutto il contrario; `LATERALE`: il resto;
+   - RSI 14 sotto 40, fra 40 e 60, sopra 60.
+2. **Stima.** Fra tutti i giorni passati della watchlist nello stesso stato,
+   la quota in cui il prezzo era piu' alto dopo l'orizzonte. Uno stato con
+   meno di `casi-minimi` casi usa la frequenza di tutti i giorni. Nessun
+   parametro adattato ai dati.
+3. **Intervallo.** Wilson al 95%, contato sui soli giorni che non si
+   sovrappongono: due giorni consecutivi condividono sei settimi dello stesso
+   movimento e non sono due prove. Se l'intervallo contiene il 50% la
+   direzione e' `INCERTO`.
+4. **Verifica.** Rifa' la stima per ogni giorno degli ultimi `giorni-verifica`,
+   usando solo gli esiti gia' noti quel giorno (walk-forward), e la confronta
+   con la base: la frequenza di rialzo di tutti i giorni. Misura l'errore con
+   il Brier score; il margine si calcola su un giorno ogni orizzonte, perche'
+   coppie dello stesso giorno sbagliano insieme. Il verdetto e' `VANTAGGIO`
+   solo se il modello batte la base anche togliendo il margine.
+5. **Prezzo.** Il 5°, il 50° e il 95° percentile dei movimenti a orizzonte
+   della coppia nell'ultimo anno, applicati alla chiusura.
+
+Aspettarsi `NESSUN_VANTAGGIO` e' realistico: la direzione delle crypto a una
+settimana e' vicina al lancio di una moneta, e dieci coppie che si muovono
+con BTC non sono dieci prove. La pagina lo dice invece di mostrare un 60%
+che sembra un segnale. Le coppie con meno di
+`60 + orizzonte + casi-minimi` candele finiscono fra le escluse, col motivo.
+
 ## Configurazione del metodo
 
 Tutte le soglie stanno nella sezione `scansione:` di `application.yml`:
 watchlist, volume, trigger di rottura, RSI, ampiezza dello stop, multiplo dell'obiettivo, capitale,
 rischio per operazione, time stop, numero massimo di posizioni reali e tipo di
 ordine (`LIMITE` o `MERCATO`, con le tariffe scritte solo in `TipoOrdine`).
+
+Il simulatore ha la sua sezione `simulatore:` (orizzonte, giorni di verifica,
+casi minimi per stato); le coppie sono la watchlist della scansione.
 
 Cambiare una soglia significa cambiare metodo. Va fatto li', tutto insieme, e
 non dentro il codice. Le formule di rischio e commissioni stanno solo in
@@ -260,7 +298,8 @@ status code se estendi il client.
 ## Cosa questo progetto non fa, deliberatamente
 
 Non piazza ordini: la chiave Kraken ha solo permessi di lettura. Non prevede
-prezzi. La scansione applica regole scritte e registra i setup su carta; decidere
+prezzi: il simulatore conta cosa e' successo dopo giorni simili e misura se
+saperlo e' servito, con il margine d'errore accanto. La scansione applica regole scritte e registra i setup su carta; decidere
 se aprire davvero resta una scelta manuale.
 
 I setup della scansione e il commento del journal vengono da codice

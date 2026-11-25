@@ -108,6 +108,19 @@ commento:
   ordini-al-giorno-massimi: 2    # una revisione al giorno: un'uscita e un'entrata
   giorni-registrazione: 3        # quanto prima dell'acquisto puo' stare la registrazione
 
+# Il simulatore: stima su base statistica, verificata sul passato prima di
+# essere mostrata. Le coppie sono la watchlist della scansione.
+simulatore:
+  # Fra quante candele giornaliere si guarda il prezzo. Sette e non trenta:
+  # con un anno di dati, trenta giorni danno una dozzina di casi indipendenti
+  # e un intervallo largo quasi quanto la scala.
+  orizzonte: 7
+  # La verifica walk-forward copre l'ultimo anno; le candele prima (Kraken ne
+  # da' 720) servono solo come storia di partenza.
+  giorni-verifica: 365
+  # Uno stato con meno casi di cosi' usa la frequenza di tutti i giorni.
+  casi-minimi: 30
+
 logging:
   level:
     dev.kraken.journal: INFO

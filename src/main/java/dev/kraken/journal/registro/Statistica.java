@@ -3,14 +3,14 @@ package dev.kraken.journal.registro;
 import java.util.Arrays;
 
 /**
- * Media e margine d'errore dei risultati in R.
+ * Media e margine d'errore dei risultati in R, e intervallo di una proporzione.
  *
  * Perche' il margine: con 15 operazioni e risultati da -1 R a +2 R, la media
  * si sposta di quasi mezza R a ogni operazione in piu'. Dire "sopra zero" senza
  * dire di quanto puo' sbagliare la media e' il modo di vedere un vantaggio che
  * non c'e'.
  */
-final class Statistica {
+public final class Statistica {
 
     private static final double Z_95 = 1.959964;
 
@@ -28,7 +28,7 @@ final class Statistica {
     private Statistica() {
     }
 
-    static double media(double[] valori) {
+    public static double media(double[] valori) {
         return Arrays.stream(valori).average().orElse(0);
     }
 
@@ -38,7 +38,7 @@ final class Statistica {
      *
      * @return null sotto i due valori: con uno solo la dispersione non esiste.
      */
-    static Double margine95(double[] valori) {
+    public static Double margine95(double[] valori) {
         int n = valori.length;
         if (n < 2) {
             return null;
@@ -47,6 +47,30 @@ final class Statistica {
         double scarti = Arrays.stream(valori).map(v -> (v - media) * (v - media)).sum();
         double deviazione = Math.sqrt(scarti / (n - 1));
         return quantileT(n - 1) * deviazione / Math.sqrt(n);
+    }
+
+    /**
+     * Intervallo di Wilson al 95% di una proporzione.
+     *
+     * Wilson e non la formula da manuale p +- 1,96 radice(p(1-p)/n): quella con
+     * pochi casi esce dallo zero e dal cento, e con 10 successi su 10 dice
+     * "100% senza margine". Wilson resta dentro la scala e con pochi casi si
+     * allarga, che e' proprio quello che deve fare.
+     *
+     * @param proporzione la frequenza osservata, fra 0 e 1
+     * @param casi su quanti casi indipendenti contarla: puo' essere meno dei
+     *        casi da cui e' calcolata la proporzione, quando quelli si sovrappongono
+     * @return {minimo, massimo}; {0, 1} senza casi, perche' allora non si sa niente
+     */
+    public static double[] wilson95(double proporzione, int casi) {
+        if (casi <= 0) {
+            return new double[] {0, 1};
+        }
+        double z2 = Z_95 * Z_95;
+        double denominatore = 1 + z2 / casi;
+        double centro = (proporzione + z2 / (2.0 * casi)) / denominatore;
+        double meta = Z_95 * Math.sqrt(proporzione * (1 - proporzione) / casi + z2 / (4.0 * casi * casi)) / denominatore;
+        return new double[] {Math.max(0, centro - meta), Math.min(1, centro + meta)};
     }
 
     /** Dalle tavole fino a 30 gradi; oltre, Cornish-Fisher, che da 31 in su sbaglia meno di un millesimo. */
