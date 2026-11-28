@@ -17,7 +17,7 @@ import dev.kraken.journal.scansione.ServizioScansione;
 import dev.kraken.journal.scansione.dto.Candidato;
 
 /**
- * Il lavoro del mattino, alle 9:15 (giornaliero.cron): prima chiude quello che e' successo
+ * Il lavoro del mattino, alle 9 (giornaliero.cron): prima chiude quello che e' successo
  * stanotte, poi guarda cosa c'e' oggi e lo registra su carta.
  *
  * L'ordine non e' casuale. Risolvere prima significa che la scansione trova un
@@ -25,7 +25,7 @@ import dev.kraken.journal.scansione.dto.Candidato;
  *
  * Perche' il mattino e perche' con la zona oraria dichiarata: le candele
  * giornaliere di Kraken chiudono a mezzanotte UTC, cioe' all'una o alle due qui
- * a seconda della stagione. Alle 9:15 la candela di ieri e' chiusa da un
+ * a seconda della stagione. Alle 9 la candela di ieri e' chiusa da un
  * pezzo, sempre. La zona oraria va indicata esplicitamente nel cron: senza,
  * Spring userebbe il fuso di sistema e con l'ora legale il lavoro si
  * sposterebbe di un'ora due volte l'anno.

@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Verifica storica</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/stile.css">
+<style>
+
+.sheet{max-width:1020px}
+
+.testa{display:flex;flex-wrap:wrap;gap:14px;align-items:baseline;justify-content:space-between}
+
+.azioni{display:flex;border:1px solid var(--rule-strong)}
+.azioni button{font-family:var(--mono);font-size:13px;padding:9px 16px;
+  background:var(--paper-raised);color:var(--ink);border:0;cursor:pointer}
+.azioni button:hover:not(:disabled){background:var(--ink);color:var(--paper)}
+.azioni button:disabled{color:var(--rule-strong);cursor:progress}
+.azioni button:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+
+#risultato{margin-bottom:18px}
+.scroller{overflow-x:auto;margin-top:4px}
+th,td{white-space:nowrap}
+td .sub{display:block;font-size:11px;color:var(--ink-soft);margin-top:3px}
+.coppia{font-weight:600}
+.barra{display:inline-block;height:8px;background:var(--rule-strong);vertical-align:middle;margin-right:8px}
+
+.state{font-family:var(--prose);font-size:17px;color:var(--ink-soft);padding:8px 0}
+.nota{font-family:var(--prose);font-size:17px;line-height:1.5;max-width:64ch;color:var(--ink-soft)}
+
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <header class="masthead">
+    <div>
+      <h1>Verifica storica</h1>
+      <div class="tagline" id="periodo">Il metodo di oggi, fatto girare sulle candele del passato</div>
+    </div>
+    <nav>
+      <a href="/">Registro</a>
+      <a href="/calcolatore.html">Calcolatore</a>
+      <a href="/scansione.html">Scansione</a>
+      <a href="/simulatore.html">Simulatore</a>
+      <a href="/verifica.html" aria-current="page">Verifica</a>
+    </nav>
+  </header>
+
+  <section>
+    <div class="testa">
+      <p class="eyebrow" style="margin-bottom:0">Come sarebbe andato</p>
+      <div class="azioni"><button type="button" id="bottoneRicalcola">Ricalcola</button></div>
+    </div>
+    <div class="state" id="stato">Scarico le candele e rifaccio la scansione giorno per giorno…</div>
+    <div class="figures" id="risultato" hidden></div>
+    <div id="giudizio"></div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Cosa tiene fuori il metodo</p>
+    <p class="nota" id="notaBocciature"></p>
+    <div class="scroller"><table id="tabellaBocciature" hidden>
+      <thead><tr><th>Controllo</th><th>Giorni bocciati</th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Per coppia</p>
+    <div class="scroller"><table id="tabellaCoppie" hidden>
+      <thead><tr>
+        <th>Coppia</th><th>Operazioni</th><th>Obiettivo</th><th>Stop</th><th>Tempo</th>
+        <th>Vincenti</th><th>Media</th><th>Totale</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table></div>
+    <div id="escluse"></div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Le operazioni</p>
+    <div class="scroller"><table id="tabellaOperazioni" hidden>
+      <thead><tr>
+        <th>Coppia</th><th>Rottura</th><th>Entrata</th><th>Stop</th><th>Obiettivo</th>
+        <th>Esito</th><th>Uscita</th><th>Risultato</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </section>
+
+  <footer>
+    Ogni giorno del passato passa dalla stessa checklist della scansione, con le stesse soglie di
+    oggi, guardando solo le candele fino a quel giorno. Il piano è quello del valutatore della
+    scansione e l'esito lo decide il risolutore del registro: stop prima dell'obiettivo se la candela
+    li tocca tutti e due, commissioni incluse. Le differenze dal vivo: il controvalore delle 24 ore
+    è quello della candela, il prezzo del mattino è l'apertura della candela dopo la rottura, e il
+    giorno di entrata conta solo per lo stop. Una coppia con un'operazione aperta non ne apre
+    un'altra. Le operazioni dello stesso periodo si somigliano, perché le coppie si muovono insieme:
+    il margine d'errore reale è più largo di quello mostrato. Il passato non garantisce il futuro.
+  </footer>
+
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = (v,d=2) => Number(v).toLocaleString('it-IT',{minimumFractionDigits:d,maximumFractionDigits:d});
+const prz = v => Number(v).toLocaleString('it-IT',{maximumSignificantDigits:6});
+const pct = (v,d=0) => fmt(v * 100, d) + '%';
+const data = s => s ? new Date(s).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '—';
+const segno = v => v > 0 ? 'gain' : v < 0 ? 'cost' : '';
+const erre = v => v === null || v === undefined ? '—' : (v > 0 ? '+' : '') + fmt(v, 2) + ' R';
+
+/* Le etichette degli enum, come nelle altre pagine. */
+const NOMI_CONTROLLI = {
+  LIQUIDITA:'liquidità', TREND:'trend', BREAKOUT:'rottura',
+  DISTANZA_DALLA_MEDIA:'distanza dalla media', PREZZO_ATTUALE:'prezzo del mattino', AMPIEZZA_STOP:'ampiezza stop'
+};
+const NOMI_STATI = {
+  APERTA:'ancora aperta', CHIUSA_ALLO_STOP:'stop', CHIUSA_ALL_OBIETTIVO:'obiettivo', CHIUSA_PER_TEMPO:'tempo'
+};
+
+async function chiedi(url){
+  const risposta = await fetch(url, {headers: {'X-Journal': '1'}});
+  if (!risposta.ok) {
+    const corpo = await risposta.json().catch(() => ({}));
+    throw new Error(corpo.errore || 'il server ha risposto ' + risposta.status);
+  }
+  return risposta.json();
+}
+
+function mostraRisultato(r){
+  const t = r.totale;
+  const aperte = t.operazioni - t.chiuse;
+  const margine = t.margineInR === null ? 'margine non calcolabile' : 'margine ± ' + fmt(t.margineInR, 2) + ' R';
+  $('risultato').innerHTML = `
+    <div class="fig"><dt>Operazioni</dt>
+      <dd>${t.operazioni} <span class="sub">${t.chiuse} chiuse${aperte ? ', ' + aperte + ' ancora aperte' : ''}</span></dd></div>
+    <div class="fig"><dt>Risultato medio</dt>
+      <dd class="${segno(t.mediaInR)}">${erre(t.mediaInR)} <span class="sub">${margine}</span></dd></div>
+    <div class="fig"><dt>Vincenti</dt>
+      <dd>${t.chiuse ? pct(t.percentualeVincenti) : '—'} <span class="sub">${t.allObiettivo} obiettivo · ${t.alloStop} stop · ${t.perTempo} tempo</span></dd></div>
+    <div class="fig"><dt>In euro</dt>
+      <dd class="${segno(t.sommaInR)}">${fmt(t.sommaInR * r.rischioPerOperazione, 2)} € <span class="sub">${erre(t.sommaInR)} con ${fmt(r.rischioPerOperazione, 2)} € di rischio a operazione</span></dd></div>`;
+  $('risultato').hidden = false;
+
+  const media = t.mediaInR === null ? '' : `Media ${erre(t.mediaInR)}, margine ± ${fmt(t.margineInR ?? 0, 2)} R. `;
+  $('giudizio').innerHTML = {
+    POSITIVO: `<p class="flag ok"><b>Sul passato il metodo ha guadagnato</b>${media}La media resta sopra zero
+      anche togliendo il margine d'errore. È una misura sul passato e con le soglie di oggi:
+      il registro su carta deve confermarla dal vivo.</p>`,
+    NEGATIVO: `<p class="flag"><b>Sul passato il metodo ha perso</b>${media}La media resta sotto zero anche
+      aggiungendo il margine d'errore. Con queste regole, in questi due anni, ogni operazione costava
+      in media più di quanto rendeva.</p>`,
+    INCERTO: `<p class="flag warn"><b>Né guadagno né perdita dimostrati</b>${media}Lo zero sta dentro il
+      margine d'errore: il risultato del passato è compatibile sia con un metodo che guadagna sia con
+      uno che perde.</p>`,
+    POCHI_CASI: `<p class="flag warn"><b>Troppe poche operazioni per un giudizio</b>Ne servono almeno
+      ${r.casiPerGiudizio} chiuse, la stessa soglia del registro. Sotto quella il risultato medio è rumore.</p>`
+  }[t.giudizio] || '';
+}
+
+function mostraBocciature(r){
+  const voci = Object.entries(r.bocciature).sort((a, b) => b[1] - a[1]);
+  $('notaBocciature').textContent = `${r.giorniEsaminati} giorni esaminati, sommando le coppie. `
+    + 'Un giorno può essere bocciato da più controlli insieme.';
+  $('tabellaBocciature').querySelector('tbody').innerHTML = voci.map(([controllo, volte]) => {
+    const quota = r.giorniEsaminati ? volte / r.giorniEsaminati : 0;
+    return `<tr><td>${NOMI_CONTROLLI[controllo] || esc(controllo)}</td>
+      <td><span class="barra" style="width:${Math.round(quota * 160)}px"></span>${volte}
+        <span class="sub">${pct(quota)} dei giorni</span></td></tr>`;
+  }).join('');
+  $('tabellaBocciature').hidden = !voci.length;
+}
+
+function rigaCoppia(c){
+  return `<tr>
+    <td class="coppia">${esc(c.coppia)}</td>
+    <td>${c.operazioni}${c.operazioni > c.chiuse ? '<span class="sub">' + (c.operazioni - c.chiuse) + ' aperte</span>' : ''}</td>
+    <td>${c.allObiettivo}</td><td>${c.alloStop}</td><td>${c.perTempo}</td>
+    <td>${c.chiuse ? pct(c.percentualeVincenti) : '—'}</td>
+    <td class="${segno(c.mediaInR)}">${erre(c.mediaInR)}</td>
+    <td class="${segno(c.sommaInR)}">${c.chiuse ? erre(c.sommaInR) : '—'}</td>
+  </tr>`;
+}
+
+function rigaOperazione(o){
+  const classe = o.stato === 'APERTA' ? 'aperta' : o.risultatoInR > 0 ? 'guadagno' : 'perdita';
+  return `<tr>
+    <td class="coppia">${esc(o.coppia)}</td>
+    <td>${data(o.segnale)}</td>
+    <td>${prz(o.entrata)}</td>
+    <td>${prz(o.stop)}</td>
+    <td>${prz(o.obiettivo)}</td>
+    <td><span class="stato ${classe}">${NOMI_STATI[o.stato] || esc(o.stato)}</span>${o.chiusura ? '<span class="sub">' + data(o.chiusura) + '</span>' : ''}</td>
+    <td>${o.prezzoUscita === null ? '—' : prz(o.prezzoUscita)}</td>
+    <td class="stato ${classe}">${erre(o.risultatoInR)}</td>
+  </tr>`;
+}
+
+async function carica(){
+  $('stato').textContent = 'Scarico le candele e rifaccio la scansione giorno per giorno…';
+  try {
+    const r = await chiedi('/api/verifica-storica');
+    $('periodo').textContent = `Dal ${data(r.dal)} al ${data(r.al)} · le soglie di oggi`;
+    $('stato').textContent = `${r.perCoppia.length} coppie verificate, ${r.operazioni.length} operazioni.`;
+    mostraRisultato(r);
+    mostraBocciature(r);
+    $('tabellaCoppie').querySelector('tbody').innerHTML = r.perCoppia.map(rigaCoppia).join('');
+    $('tabellaCoppie').hidden = !r.perCoppia.length;
+    $('escluse').innerHTML = r.escluse.length
+      ? `<p class="flag warn"><b>Non verificate</b>${r.escluse.map(esc).join('<br>')}</p>` : '';
+    $('tabellaOperazioni').querySelector('tbody').innerHTML = r.operazioni.slice().reverse().map(rigaOperazione).join('');
+    $('tabellaOperazioni').hidden = !r.operazioni.length;
+  } catch (e) {
+    $('stato').textContent = 'Verifica non disponibile: ' + e.message;
+  }
+}
+
+$('bottoneRicalcola').addEventListener('click', async () => {
+  const b = $('bottoneRicalcola');
+  b.disabled = true; b.textContent = 'Calcolo…';
+  try { await carica(); } finally { b.disabled = false; b.textContent = 'Ricalcola'; }
+});
+
+carica();
+</script>
+</body>
+</html>

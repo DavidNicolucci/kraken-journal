@@ -82,10 +82,10 @@ class ValutatoreSetupTest {
     @Test
     void unPeriodoFuoriMisuraFermaLAvvio() {
         var errore = assertThrows(IllegalArgumentException.class, () -> new ProprietaScansione(List.of("HYPEEUR"),
-                1_000_000, 12, 5, 10, 2.0, 203, 1, 0, 0.5, 15, 15, 2, TipoOrdine.LIMITE, 20, 1.5));
+                1_000_000, 12, 5, 10, 2.0, 203, 1, 0, 0.5, 15, 15, 2, TipoOrdine.LIMITE, 20, 1.5, null));
         assertTrue(errore.getMessage().contains("giorni-minimo-stop va da 1 a 60"), errore.getMessage());
         assertThrows(IllegalArgumentException.class, () -> new ProprietaScansione(List.of("HYPEEUR"),
-                1_000_000, 12, 5, 10, 2.0, 203, 1, 5, 0.5, 15, 15, 2, TipoOrdine.LIMITE, 60, 1.5));
+                1_000_000, 12, 5, 10, 2.0, 203, 1, 5, 0.5, 15, 15, 2, TipoOrdine.LIMITE, 60, 1.5, null));
     }
 
     /** Il minimo e' scelto perche', tolto lo 0,5% di margine, lo stop cada a 68,00. */
@@ -96,6 +96,6 @@ class ValutatoreSetupTest {
 
     private static ProprietaScansione proprieta() {
         return new ProprietaScansione(List.of("HYPEEUR"), 1_000_000, 12, 5, 10, 2.0,
-                203, 1, 5, 0.5, 15, 15, 2, TipoOrdine.LIMITE, 20, 1.5);
+                203, 1, 5, 0.5, 15, 15, 2, TipoOrdine.LIMITE, 20, 1.5, null);
     }
 }

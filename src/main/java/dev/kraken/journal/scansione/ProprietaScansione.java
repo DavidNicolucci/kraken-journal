@@ -1,6 +1,8 @@
 package dev.kraken.journal.scansione;
 
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -35,6 +37,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *        massimo di questi giorni, ultima candela esclusa.
  * @param multiploVolumeBreakout e il controvalore della rottura deve essere
  *        almeno questo multiplo della media degli stessi giorni.
+ * @param controlliAttivi i controlli della checklist che decidono se una
+ *        coppia e' idonea. Gli altri non vengono nemmeno valutati, ne' dalla
+ *        scansione ne' dalla verifica storica. Se manca, valgono tutti: e'
+ *        il metodo com'era prima che esistesse questa voce.
  */
 @ConfigurationProperties(prefix = "scansione")
 public record ProprietaScansione(
@@ -53,7 +59,8 @@ public record ProprietaScansione(
         int posizioniMassime,
         TipoOrdine tipoOrdine,
         int giorniBreakout,
-        double multiploVolumeBreakout) {
+        double multiploVolumeBreakout,
+        Set<Controllo> controlliAttivi) {
 
     public ProprietaScansione {
         if (watchlist == null || watchlist.isEmpty()) {
@@ -72,6 +79,8 @@ public record ProprietaScansione(
         if (tipoOrdine == null) {
             tipoOrdine = TipoOrdine.LIMITE;
         }
+        controlliAttivi = controlliAttivi == null || controlliAttivi.isEmpty()
+                ? EnumSet.allOf(Controllo.class) : EnumSet.copyOf(controlliAttivi);
     }
 
     /** Quanto si e' disposti a perdere su una singola operazione. */

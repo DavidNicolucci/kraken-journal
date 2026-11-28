@@ -35,12 +35,13 @@ kraken:
   api-secret: ${KRAKEN_API_SECRET}
 
 # Il lavoro del mattino (regola R2: una revisione al giorno, a orario fisso,
-# su candela chiusa). Alle 9:15 e non alle 7: il computer si accende alle 9, e
-# un lavoro pianificato a computer spento salta senza essere recuperato.
+# su candela chiusa). Alle 9 e non alle 7: il computer si accende alle 9, e un
+# lavoro pianificato a computer spento salta senza essere recuperato. Se
+# l'app parte dopo, il lavoro si avvia a mano (o lo avvia il controllo delle 9:05).
 giornaliero:
-  # Le candele daily di Kraken chiudono a mezzanotte UTC: alle 9:15 quella di
+  # Le candele daily di Kraken chiudono a mezzanotte UTC: alle 9 quella di
   # ieri e' chiusa da ore, in qualunque stagione.
-  cron: "0 15 9 * * *"
+  cron: "0 0 9 * * *"
   # Esplicito, altrimenti Spring userebbe il fuso di sistema e con l'ora legale
   # il lavoro si sposterebbe di un'ora due volte l'anno.
   fuso: Europe/Rome
@@ -96,6 +97,13 @@ scansione:
   # chiamava "breakout" ogni coppia che passava i filtri.
   giorni-breakout: 20
   multiplo-volume-breakout: 1.5
+  # Le regole che decidono se una coppia e' idonea (28/11/2026). Spente:
+  # DISTANZA_DALLA_MEDIA, PREZZO_ATTUALE e AMPIEZZA_STOP. Sulle candele del
+  # 02/2025-11/2026 distanza e ampiezza stop sceglievano giorni seguiti in media
+  # da ribassi, prezzo del mattino ripeteva la rottura su pochi casi; il metodo con le sole tre qui sotto ha dato +0,17 R su 79
+  # operazioni (margine 0,22) contro -0,42 R su 16. Ipotesi da confermare sul
+  # registro, non risultato acquisito. Togliendo la riga tornano tutte e sei.
+  controlli-attivi: [LIQUIDITA, TREND, BREAKOUT]
 
 # Soglie del commento del journal (docs/regole-commento-journal.md). Come per
 # la scansione: cambiarle e' cambiare il modo di leggere i dati.

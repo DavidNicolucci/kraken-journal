@@ -40,7 +40,7 @@ class ServizioRegistroTest {
                 chiusa(Trigger.BREAKOUT_20_GIORNI, false, -1),
                 chiusa(Trigger.MANUALE, true, -1)));
         var proprieta = new ProprietaScansione(List.of("XBTEUR"), 1_000_000, 12, 5, 10, 2.0,
-                203, 1, 5, 0.5, 15, 15, 2, TipoOrdine.LIMITE, 20, 1.5);
+                203, 1, 5, 0.5, 15, 15, 2, TipoOrdine.LIMITE, 20, 1.5, null);
 
         var statistiche = new ServizioRegistro(repository, mock(MercatoClient.class), proprieta, new PairResolver()).statistiche();
 
@@ -57,7 +57,7 @@ class ServizioRegistroTest {
     private final RegistroRepository repository = mock(RegistroRepository.class);
     private final ServizioRegistro servizio = new ServizioRegistro(repository, mock(MercatoClient.class),
             new ProprietaScansione(List.of("XBTEUR"), 1_000_000, 12, 5, 10, 2.0,
-                    203, 1, 5, 0.5, 15, 15, 2, TipoOrdine.LIMITE, 20, 1.5), new PairResolver());
+                    203, 1, 5, 0.5, 15, 15, 2, TipoOrdine.LIMITE, 20, 1.5, null), new PairResolver());
 
     private OperazioneRegistrata registra(String coppia, double quantita, boolean reale) {
         when(repository.save(any())).thenAnswer(chiamata -> chiamata.getArgument(0));

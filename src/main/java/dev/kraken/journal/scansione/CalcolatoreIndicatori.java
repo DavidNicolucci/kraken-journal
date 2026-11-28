@@ -31,8 +31,8 @@ public final class CalcolatoreIndicatori {
     private static final int PERIODO_RSI = 14;
     private static final int PERIODO_ATR = 14;
     /** Sotto questo numero di candele l'RSI di Wilder non e' ancora a regime. */
-    /** Package: ProprietaScansione ci confronta i periodi della configurazione. */
-    static final int CANDELE_MINIME = 60;
+    /** Pubblico: ProprietaScansione ci confronta i periodi, la verifica storica ci parte. */
+    public static final int CANDELE_MINIME = 60;
 
     private CalcolatoreIndicatori() {
     }

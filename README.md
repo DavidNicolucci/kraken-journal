@@ -6,7 +6,8 @@ Strumenti personali per operare su Kraken con un metodo scritto e misurabile:
 - **Calcolatore**: quantita', pareggio e rapporto rischio/rendimento prima di entrare.
 - **Scansione**: controlla ogni giorno una watchlist fissa contro la checklist della guida.
 - **Registro**: tiene traccia delle operazioni (su carta o reali) e ne misura l'esito in R.
-- **Lavoro giornaliero**: alle 9:15 chiude le operazioni risolte e registra le nuove idonee.
+- **Lavoro giornaliero**: alle 9:00 chiude le operazioni risolte e registra le nuove idonee.
+- **Verifica storica**: fa girare il metodo di oggi sui due anni di candele di Kraken e misura come sarebbe andato.
 - **Simulatore**: stima quante volte, da uno stato come quello di oggi, il prezzo e' salito a 7 giorni, e verifica sull'ultimo anno se saperlo e' servito.
 
 Tutto e' calcolato e scritto da codice deterministico, commento compreso: dal
@@ -178,7 +179,7 @@ il vantaggio e' misurato solo quando media meno margine resta sopra zero. Con
 0,8 R: `registrazioni-per-giudizio` e' il minimo per cominciare a guardare,
 non per concludere.
 
-### Lavoro giornaliero — ogni giorno alle 9:15 (Europe/Rome)
+### Lavoro giornaliero — ogni giorno alle 9:00 (Europe/Rome)
 
 1. Risolve le operazioni aperte, la carta sulle candele e le reali dagli
    ordini su Kraken, cosi' il registro e' aggiornato.
@@ -188,7 +189,7 @@ non per concludere.
    candidata per un'operazione reale.
 
 Le posizioni reali restano al massimo `posizioni-massime` (regola 2.3); le
-analisi su carta non hanno tetto, perche' non costano commissioni. Alle 9:15 le
+analisi su carta non hanno tetto, perche' non costano commissioni. Alle 9:00 le
 candele giornaliere di Kraken, che chiudono a mezzanotte UTC, sono gia' chiuse
 in qualunque stagione.
 
@@ -205,6 +206,37 @@ pagina di un altro sito aperta nello stesso browser non puo' farlo senza un
 permesso che il server non da'. Senza, il server risponde `403`.
 
 Le coppie gia' aperte non vengono registrate due volte.
+
+### Verifica storica — `GET /api/verifica-storica`
+
+Risponde alla domanda che il registro da solo impiegherebbe mesi a chiudere:
+**con le regole di oggi, sul passato, il metodo guadagnava?** Quando il
+mercato scende la scansione non trova niente per settimane, e il registro
+resta vuoto; le candele di Kraken (720 per coppia, circa due anni) contengono
+invece anche le fasi di salita.
+
+Per ogni giorno di ogni coppia della watchlist:
+
+1. calcola gli indicatori **solo sulle candele fino a quel giorno**;
+2. passa dalla stessa `Checklist` della scansione, con le soglie di oggi;
+3. se tutti i controlli sono superati, prende il piano dal `ValutatoreSetup`
+   e decide l'esito con il `RisolutoreOperazione` del registro: stop prima
+   dell'obiettivo se la candela li tocca entrambi, time stop, commissioni.
+
+Nessuna regola ha una copia sua: cambiare una soglia cambia insieme la
+scansione e la verifica. Come nel registro, una coppia con un'operazione
+aperta non ne apre un'altra, e il giudizio usa `registrazioni-per-giudizio` e
+il margine al 95%.
+
+Le differenze dal vivo, tutte nella direzione prudente o neutra:
+- il controvalore delle 24 ore e' quello della candela, non del ticker;
+- il prezzo del mattino e' l'apertura della candela dopo la rottura;
+- il giorno di entrata si legge sulla giornaliera: conta lo stop, non l'obiettivo.
+
+La pagina mostra anche quante volte ogni controllo ha bocciato: e' il modo
+di vedere quale regola tiene fuori il metodo. Le operazioni dello stesso
+periodo non sono indipendenti, perche' le coppie si muovono insieme: il
+margine reale e' piu' largo di quello mostrato.
 
 ### Simulatore — `GET /api/simulatore`
 
@@ -246,6 +278,14 @@ Tutte le soglie stanno nella sezione `scansione:` di `application.yml`:
 watchlist, volume, trigger di rottura, RSI, ampiezza dello stop, multiplo dell'obiettivo, capitale,
 rischio per operazione, time stop, numero massimo di posizioni reali e tipo di
 ordine (`LIMITE` o `MERCATO`, con le tariffe scritte solo in `TipoOrdine`).
+
+`controlli-attivi` dice quali controlli della checklist decidono l'idoneita'.
+Dal 28/11/2026 sono `LIQUIDITA`, `TREND` e `BREAKOUT`: sulla verifica storica
+distanza dalla media e ampiezza dello stop sceglievano giorni seguiti in media
+da ribassi, e il metodo con le sole tre regole e' passato da -0,42 R su 16
+operazioni a +0,17 R su 79 (margine 0,22, quindi non ancora dimostrato). Un
+controllo spento non viene valutato ne' dalla scansione ne' dalla verifica.
+Senza la voce valgono tutti e sei. La quantita' non supera mai il capitale.
 
 Il simulatore ha la sua sezione `simulatore:` (orizzonte, giorni di verifica,
 casi minimi per stato); le coppie sono la watchlist della scansione.

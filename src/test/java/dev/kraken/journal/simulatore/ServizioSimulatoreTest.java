@@ -2,6 +2,8 @@ package dev.kraken.journal.simulatore;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -61,8 +63,10 @@ class ServizioSimulatoreTest {
     }
 
     private static ServizioSimulatore servizio(MercatoClient mercato, List<String> watchlist) {
+        // Il download in parallelo e' quello vero: chiama le candele delle singole coppie stubbate sopra.
+        when(mercato.candeleChiusePerCoppia(anyList(), any())).thenCallRealMethod();
         var scansione = new ProprietaScansione(watchlist, 1_000_000, 12, 5, 10, 2.0,
-                203, 1, 5, 0.5, 15, 15, 2, TipoOrdine.LIMITE, 20, 1.5);
+                203, 1, 5, 0.5, 15, 15, 2, TipoOrdine.LIMITE, 20, 1.5, null);
         return new ServizioSimulatore(mercato, scansione, new ProprietaSimulatore(7, 365, 30));
     }
 

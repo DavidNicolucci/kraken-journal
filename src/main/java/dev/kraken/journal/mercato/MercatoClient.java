@@ -7,6 +7,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
 
 import org.slf4j.Logger;
@@ -99,6 +102,37 @@ public class MercatoClient {
         cache.keySet().removeIf(k -> k.intervallo() == intervallo && k.periodo() != chiave.periodo());
         cache.put(chiave, candele);
         return candele;
+    }
+
+    /**
+     * Le candele chiuse di piu' coppie, chieste in parallelo: il semaforo qui
+     * dentro tiene comunque al massimo {@value #CHIAMATE_CONTEMPORANEE}
+     * chiamate in volo. Una coppia che Kraken non restituisce resta nella
+     * mappa con valore null, cosi' chi chiama la dichiara esclusa invece di
+     * perderla in silenzio.
+     *
+     * @return le coppie nell'ordine richiesto
+     */
+    public Map<String, List<Candela>> candeleChiusePerCoppia(List<String> coppie, Intervallo intervallo) {
+        Map<String, List<Candela>> candele = new LinkedHashMap<>();
+        try (var esecutore = Executors.newVirtualThreadPerTaskExecutor()) {
+            Map<String, Future<List<Candela>>> futuri = new LinkedHashMap<>();
+            coppie.forEach(coppia -> futuri.put(coppia, esecutore.submit(() -> candeleChiuse(coppia, intervallo))));
+            futuri.forEach((coppia, futuro) -> candele.put(coppia, attendi(coppia, futuro)));
+        }
+        return candele;
+    }
+
+    private static List<Candela> attendi(String coppia, Future<List<Candela>> futuro) {
+        try {
+            return futuro.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (ExecutionException e) {
+            log.warn("Candele di {} non disponibili: {}", coppia, e.getCause().getMessage());
+            return null;
+        }
     }
 
     /** Riepilogo a 24 ore delle coppie richieste, in una sola chiamata. */

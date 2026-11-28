@@ -194,7 +194,7 @@ class ServizioScansioneTest {
 
     private static ProprietaScansione proprieta(List<String> watchlist) {
         return new ProprietaScansione(watchlist, 1_000_000, 12, 5, 10, 2.0,
-                203, 1, 5, 0.5, 15, 15, 2, TipoOrdine.LIMITE, 20, 1.5);
+                203, 1, 5, 0.5, 15, 15, 2, TipoOrdine.LIMITE, 20, 1.5, null);
     }
 
     private static Esito esitoDi(Candidato candidato, Controllo controllo) {

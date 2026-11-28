@@ -49,7 +49,11 @@ public class ValutatoreSetup {
         double obiettivo = MatematicaOperazione.obiettivoPerMultiplo(ultimoPrezzo, perditaPerUnita,
                 proprieta.multiploObiettivo(), tipoOrdine);
         double guadagnoPerUnita = MatematicaOperazione.risultatoPerUnita(ultimoPrezzo, obiettivo, tipoOrdine);
-        double quantita = perditaPerUnita <= 0 ? 0 : proprieta.rischioAmmesso() / perditaPerUnita;
+        // Mai piu' del capitale. Senza il controllo AMPIEZZA_STOP lo stop puo' essere
+        // vicinissimo: con l'1% di rischio bastano le commissioni a tenere la quantita'
+        // sotto il capitale, con un rischio piu' alto no. Allora si rischia meno di una R.
+        double quantita = perditaPerUnita <= 0 ? 0
+                : Math.min(proprieta.rischioAmmesso() / perditaPerUnita, proprieta.capitale() / ultimoPrezzo);
 
         return new Piano(
                 ultimoPrezzo,

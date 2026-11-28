@@ -79,7 +79,7 @@ class GeneratoreCommentoTest {
 
     private JournalReport commento() {
         var proprietaScansione = new ProprietaScansione(List.of("XBTEUR", "ETHEUR", "SOLEUR"), 1_000_000, 12,
-                5, 10, 2.0, 203, 1, 5, 0.5, 15, registrazioniPerGiudizio, 2, TipoOrdine.LIMITE, 20, 1.5);
+                5, 10, 2.0, 203, 1, 5, 0.5, 15, registrazioniPerGiudizio, 2, TipoOrdine.LIMITE, 20, 1.5, null);
         var generatore = new GeneratoreCommento(new ProprietaCommento(metodoDal, 50, 50, 2, 3),
                 proprietaScansione, new PairResolver(), ROMA);
         var storia = new StoriaOperazioni(new PairResolver()).componi(trade, ledgerLetto ? ledger : null);
